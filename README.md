@@ -16,6 +16,3 @@
 - Benefit: Fast like static, fresh like dynamic
 
 
-If Travel Mate had 10x more users, we would reduce SSR usage
-and rely more on static and ISR pages to reduce server load,
-costs, and improve TTFB.
