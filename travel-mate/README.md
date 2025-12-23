@@ -58,3 +58,30 @@ npx lint-staged
 ```
 
 - The second log shows how a deliberate `lint-test.ts` violation blocked the commit until the issue was removed, ensuring a consistent main branch.
+
+## 🔐 Environment Variables
+
+- Copy `.env.example` to `.env.local`, then replace each placeholder with project-specific values. `.env.local` stays untracked because `.gitignore` ignores every `.env*` file except for `.env.example`.
+- Server-only secrets (never used in client components):
+  - `DATABASE_URL` – backing data store connection string used in API routes.
+  - `MAP_PROVIDER` – provider identifier read on the server for feature toggles.
+  - `MAPBOX_API_KEY` – third-party token consumed only inside server routes/services.
+- Client-safe values (prefixed with `NEXT_PUBLIC_` so Next.js can expose them to the browser):
+  - `NEXT_PUBLIC_API_URL` – base path the client uses when calling backend endpoints.
+  - `NEXT_PUBLIC_ENV` – display-friendly label rendered in `app/env-check.tsx`.
+- Safe usage pattern (server secrets never leave the backend):
+
+```ts
+// app/api/health/route.ts
+const dbConfigured = Boolean(process.env.DATABASE_URL); // server-only
+const publicEnv = process.env.NEXT_PUBLIC_ENV; // safe because it is prefixed
+return NextResponse.json({
+  checks: { databaseUrlPresent: dbConfigured },
+  env: publicEnv ?? "unknown",
+});
+```
+
+- Common pitfalls avoided:
+  - Accidental commits of local secrets (`.env.local`) thanks to the `.gitignore` rules.
+  - Using server-only variables in client components—the client only ever reads `NEXT_PUBLIC_*` values.
+  - Remembering that environment variables are evaluated at build time; restarting `next dev` after edits prevents stale values.
