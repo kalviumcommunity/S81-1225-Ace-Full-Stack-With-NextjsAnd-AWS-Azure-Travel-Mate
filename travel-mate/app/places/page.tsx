@@ -1,13 +1,7 @@
 export const revalidate = 60; // re-generate every 60 seconds
 
 async function getPopularPlaces() {
-  return [
-    "Goa",
-    "Jaipur",
-    "Kerala",
-    "Ladakh",
-    "Pondicherry",
-  ];
+  return ["Goa", "Jaipur", "Kerala", "Ladakh", "Pondicherry"];
 }
 
 export default async function PlacesPage() {

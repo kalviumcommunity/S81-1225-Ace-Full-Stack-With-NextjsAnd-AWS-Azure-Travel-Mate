@@ -1,4 +1,4 @@
-export const dynamic = 'force-dynamic'; // SSR always
+export const dynamic = "force-dynamic"; // SSR always
 
 async function getUserData() {
   // simulate real-time user data
