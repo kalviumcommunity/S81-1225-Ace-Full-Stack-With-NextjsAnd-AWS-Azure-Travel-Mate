@@ -6,8 +6,12 @@ export default function EnvCheckPage() {
     <main>
       <h1>Environment Check</h1>
 
-      <p><strong>Current Environment:</strong> {env}</p>
-      <p><strong>API URL:</strong> {apiUrl}</p>
+      <p>
+        <strong>Current Environment:</strong> {env}
+      </p>
+      <p>
+        <strong>API URL:</strong> {apiUrl}
+      </p>
     </main>
   );
 }
