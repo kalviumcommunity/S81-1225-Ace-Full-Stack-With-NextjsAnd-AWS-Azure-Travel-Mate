@@ -2,7 +2,195 @@
 
 A full-stack travel destination application built with Next.js, TypeScript, PostgreSQL, and Redis.
 
-## 🐳 Docker Setup
+## �️ Database Schema Design (Prisma ORM)
+
+This project uses **Prisma ORM** with a normalized PostgreSQL database schema following industry best practices.
+
+### Entity-Relationship Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                           TRAVEL MATE DATABASE SCHEMA                                │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+    ┌──────────────┐           ┌──────────────┐           ┌──────────────┐
+    │   Category   │           │    User      │           │   Amenity    │
+    │──────────────│           │──────────────│           │──────────────│
+    │ id (PK)      │           │ id (PK)      │           │ id (PK)      │
+    │ name         │           │ email (UQ)   │           │ name (UQ)    │
+    │ slug (UQ)    │           │ name         │           │ icon         │
+    │ description  │           │ role         │           │ createdAt    │
+    │ iconUrl      │           │ bio          │           │ updatedAt    │
+    │ sortOrder    │           │ avatarUrl    │           └──────┬───────┘
+    │ isActive     │           │ emailVerified│                  │
+    │ createdAt    │           │ isActive     │                  │
+    │ updatedAt    │           │ createdAt    │                  │
+    └──────┬───────┘           │ updatedAt    │                  │
+           │                   └──────┬───────┘                  │
+           │                          │                          │
+           │1                         │1                         │M
+           │                          │                          │
+           ▼M                         ▼M                         ▼
+    ┌──────────────┐           ┌──────────────┐           ┌──────────────┐
+    │    Place     │◄─────────►│   Review     │           │ PlaceAmenity │
+    │──────────────│     M:N   │──────────────│           │──────────────│
+    │ id (PK)      │           │ id (PK)      │           │ id (PK)      │
+    │ name         │           │ userId (FK)  │           │ placeId (FK) │
+    │ slug (UQ)    │           │ placeId (FK) │           │ amenityId(FK)│
+    │ description  │           │ rating       │           │ createdAt    │
+    │ address      │           │ title        │           └──────────────┘
+    │ city         │           │ comment      │                  ▲M
+    │ country      │           │ status       │                  │
+    │ latitude     │           │ visitDate    │                  │
+    │ longitude    │           │ helpfulCount │           ┌──────┴───────┐
+    │ imageUrl     │           │ createdAt    │           │    Place     │
+    │ rating       │           │ updatedAt    │           └──────────────┘
+    │ reviewCount  │           └──────────────┘
+    │ priceLevel   │
+    │ isFeatured   │           ┌──────────────┐           ┌──────────────┐
+    │ categoryId(FK)│          │   Favorite   │           │  PlaceImage  │
+    │ createdAt    │           │──────────────│           │──────────────│
+    │ updatedAt    │           │ id (PK)      │           │ id (PK)      │
+    └──────┬───────┘           │ userId (FK)  │           │ placeId (FK) │
+           │                   │ placeId (FK) │           │ url          │
+           │1                  │ createdAt    │           │ altText      │
+           │                   └──────────────┘           │ isPrimary    │
+           │                          ▲M                  │ sortOrder    │
+           │                          │                   │ createdAt    │
+           ▼M                         │                   └──────────────┘
+    ┌──────────────┐                  │                          ▲M
+    │  TripPlace   │           ┌──────┴───────┐                  │
+    │──────────────│           │    User      │           ┌──────┴───────┐
+    │ id (PK)      │           └──────────────┘           │    Place     │
+    │ tripId (FK)  │                                      └──────────────┘
+    │ placeId (FK) │
+    │ visitOrder   │           ┌──────────────┐           ┌──────────────┐
+    │ visitDate    │           │     Trip     │◄─────────►│  TripMember  │
+    │ duration     │           │──────────────│     1:M   │──────────────│
+    │ notes        │           │ id (PK)      │           │ id (PK)      │
+    │ createdAt    │           │ name         │           │ tripId (FK)  │
+    │ updatedAt    │           │ description  │           │ userId (FK)  │
+    └──────────────┘           │ startDate    │           │ role         │
+           ▲M                  │ endDate      │           │ joinedAt     │
+           │                   │ budget       │           └──────────────┘
+           │                   │ currency     │                  ▲M
+    ┌──────┴───────┐           │ status       │                  │
+    │     Trip     │           │ coverImage   │           ┌──────┴───────┐
+    └──────────────┘           │ isPublic     │           │    User      │
+                               │ userId (FK)  │           └──────────────┘
+                               │ createdAt    │
+                               │ updatedAt    │
+                               └──────────────┘
+```
+
+### Database Models
+
+| Model | Description | Key Fields |
+|-------|-------------|------------|
+| **User** | Application users with roles | email (unique), role (USER/ADMIN/MODERATOR) |
+| **Category** | Travel destination categories | slug (unique), sortOrder |
+| **Place** | Travel destinations | slug (unique), coordinates, rating, categoryId |
+| **PlaceImage** | Multiple images per place | url, isPrimary, sortOrder |
+| **Amenity** | Available amenities | name (unique), icon |
+| **PlaceAmenity** | Junction table (Place ↔ Amenity) | placeId, amenityId (unique pair) |
+| **Review** | User reviews for places | rating (1-5), status (PENDING/APPROVED/REJECTED) |
+| **Favorite** | User's favorite places | userId, placeId (unique pair) |
+| **Trip** | User trip itineraries | status (PLANNING/UPCOMING/IN_PROGRESS/COMPLETED/CANCELLED) |
+| **TripPlace** | Places in a trip | visitOrder, duration, notes |
+| **TripMember** | Trip collaborators | role (owner/editor/viewer) |
+
+### Enums
+
+```prisma
+enum UserRole {
+  USER       // Regular user
+  ADMIN      // Full system access
+  MODERATOR  // Content moderation access
+}
+
+enum TripStatus {
+  PLANNING     // Trip is being planned
+  UPCOMING     // Trip is confirmed
+  IN_PROGRESS  // Currently on the trip
+  COMPLETED    // Trip finished
+  CANCELLED    // Trip cancelled
+}
+
+enum ReviewStatus {
+  PENDING   // Awaiting moderation
+  APPROVED  // Visible to public
+  REJECTED  // Not approved
+}
+```
+
+### Normalization
+
+The schema follows **Third Normal Form (3NF)**:
+
+| Normal Form | Applied Rule | Example |
+|-------------|--------------|---------|
+| **1NF** | Atomic values, no repeating groups | Place amenities in separate `PlaceAmenity` table |
+| **2NF** | No partial dependencies | All non-key fields depend on entire primary key |
+| **3NF** | No transitive dependencies | Category data stored in `Category` table, not duplicated in `Place` |
+
+### Indexes
+
+Strategic indexes for query performance:
+
+```sql
+-- User lookups
+@@index([email])
+
+-- Place queries
+@@index([categoryId])
+@@index([country])
+@@index([isFeatured])
+@@index([rating])
+
+-- Review queries
+@@index([userId])
+@@index([placeId])
+@@index([status])
+
+-- Trip queries
+@@index([userId])
+@@index([status])
+```
+
+### Prisma Commands
+
+```bash
+# Generate Prisma Client
+npx prisma generate
+
+# Create and apply migrations
+npx prisma migrate dev --name <migration_name>
+
+# Reset database (deletes all data)
+npx prisma migrate reset
+
+# Seed database with sample data
+npx prisma db seed
+
+# Open Prisma Studio (visual database editor)
+npx prisma studio
+
+# View database in formatted output
+npx prisma db pull
+```
+
+### Seed Data
+
+The seed script (`prisma/seed.ts`) populates:
+- 6 Categories (Landmarks, Nature, Beaches, Museums, Adventure, Historical)
+- 8 Amenities (WiFi, Parking, Restaurant, etc.)
+- 4 Users (Admin, Moderator, 2 Regular users)
+- 6 Places (Eiffel Tower, Grand Canyon, Machu Picchu, etc.)
+- Reviews, Favorites, Trips with sample data
+
+---
+
+## �🐳 Docker Setup
 
 This project is fully containerized using Docker and Docker Compose, allowing you to run the entire stack (Next.js app, PostgreSQL database, and Redis cache) with a single command.
 
@@ -225,6 +413,7 @@ hooks/ → Custom React hooks
 services/ → API/business logic  
 types/ → TypeScript types  
 init-db/ → Database initialization SQL scripts  
+prisma/ → Prisma schema, migrations, and seed data  
 
 This structure separates concerns and helps the app scale as features grow.
 
