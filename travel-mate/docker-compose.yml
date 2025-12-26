@@ -1,0 +1,98 @@
+version: "3.8"
+
+services:
+  # ===========================
+  # Next.js Application Service
+  # ===========================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: travel-mate-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:postgres123@db:5432/travelmate_db
+      - REDIS_URL=redis://redis:6379
+      - NEXT_PUBLIC_API_URL=http://localhost:3000/api
+      - NEXT_PUBLIC_ENV=docker
+      - MAP_PROVIDER=mapbox
+      - MAPBOX_API_KEY=${MAPBOX_API_KEY:-pk.your-provider-token}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - travel-mate-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ===========================
+  # PostgreSQL Database Service
+  # ===========================
+  db:
+    image: postgres:16-alpine
+    container_name: travel-mate-db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+      - POSTGRES_DB=travelmate_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    networks:
+      - travel-mate-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d travelmate_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ===========================
+  # Redis Cache Service
+  # ===========================
+  redis:
+    image: redis:7-alpine
+    container_name: travel-mate-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - travel-mate-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+# ===========================
+# Shared Bridge Network
+# ===========================
+networks:
+  travel-mate-network:
+    driver: bridge
+    name: travel-mate-network
+
+# ===========================
+# Persistent Volumes
+# ===========================
+volumes:
+  postgres_data:
+    name: travel-mate-postgres-data
+  redis_data:
+    name: travel-mate-redis-data
