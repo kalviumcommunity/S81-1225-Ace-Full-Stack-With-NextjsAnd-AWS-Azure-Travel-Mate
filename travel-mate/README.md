@@ -295,7 +295,261 @@ The integration with Next.js App Router is seamless, allowing direct database ac
 
 ---
 
-## 🗂️ Database Schema Design (Prisma ORM)
+## � Database Migrations & Seed Scripts
+
+### Understanding Migrations
+
+Migrations capture schema changes and keep the database synchronized with Prisma models. Each migration is versioned and stored in `prisma/migrations/`.
+
+### Migration Files Structure
+
+```
+prisma/migrations/
+├── migration_lock.toml
+├── 20251226075514_init_schema/
+│   └── migration.sql          # Initial schema with all tables
+└── 20251229075620_add_user_phone_number/
+    └── migration.sql          # Added phoneNumber field to users
+```
+
+### Migration Workflow
+
+#### 1. Create Initial Migration
+
+```bash
+npx prisma migrate dev --name init_schema
+```
+
+This generates SQL and applies it to the database:
+
+```sql
+-- CreateEnum
+CREATE TYPE "UserRole" AS ENUM ('USER', 'ADMIN', 'MODERATOR');
+CREATE TYPE "TripStatus" AS ENUM ('PLANNING', 'UPCOMING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED');
+CREATE TYPE "ReviewStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+
+-- CreateTable
+CREATE TABLE "users" (
+    "id" UUID NOT NULL,
+    "email" VARCHAR(255) NOT NULL,
+    "name" VARCHAR(255) NOT NULL,
+    -- ... more fields
+    CONSTRAINT "users_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable (categories, places, reviews, trips, etc.)
+```
+
+#### 2. Add New Migration
+
+When modifying the schema (e.g., adding a field):
+
+```prisma
+model User {
+  // ... existing fields
+  phoneNumber   String?   @db.VarChar(20) // New field
+}
+```
+
+Run:
+```bash
+npx prisma migrate dev --name add_user_phone_number
+```
+
+Output:
+```
+Applying migration `20251229075620_add_user_phone_number`
+
+The following migration(s) have been created and applied from new schema changes:
+
+prisma/migrations/
+  └─ 20251229075620_add_user_phone_number/
+    └─ migration.sql
+
+Your database is now in sync with your schema.
+```
+
+Generated SQL:
+```sql
+-- AlterTable
+ALTER TABLE "users" ADD COLUMN "phoneNumber" VARCHAR(20);
+```
+
+#### 3. Check Migration Status
+
+```bash
+npx prisma migrate status
+```
+
+Output:
+```
+2 migrations found in prisma/migrations
+Database schema is up to date!
+```
+
+### Rollback & Reset
+
+#### Safe Rollback (Development Only)
+
+```bash
+# Reset database - drops all data, re-applies migrations, runs seed
+npx prisma migrate reset
+```
+
+⚠️ **Warning**: This deletes ALL data. Only use in development.
+
+#### Production Rollback Strategy
+
+For production, create a reverse migration instead of using reset:
+
+```bash
+# Create a migration that undoes the change
+npx prisma migrate dev --name rollback_phone_number
+```
+
+### Seed Script
+
+The seed script (`prisma/seed.ts`) populates initial data using **idempotent operations**:
+
+#### Key Features
+
+1. **Upsert Operations** - Won't create duplicates:
+   ```typescript
+   prisma.category.upsert({
+     where: { slug: "landmarks" },
+     update: {},
+     create: {
+       name: "Landmarks",
+       slug: "landmarks",
+       description: "Famous monuments and landmarks",
+     },
+   })
+   ```
+
+2. **Skip Duplicates** - For bulk inserts:
+   ```typescript
+   prisma.tripMember.createMany({
+     data: [...],
+     skipDuplicates: true,
+   })
+   ```
+
+#### Running the Seed
+
+```bash
+npx prisma db seed
+```
+
+Output:
+```
+🌱 Starting database seeding...
+📁 Creating categories...
+✅ Created 6 categories
+🎯 Creating amenities...
+✅ Created 8 amenities
+👥 Creating users...
+✅ Created 4 users
+📍 Creating places...
+✅ Created 6 places
+🖼️ Creating place images...
+✅ Created place images
+🎯 Linking amenities to places...
+✅ Linked amenities to places
+⭐ Creating reviews...
+✅ Created reviews
+❤️ Creating favorites...
+✅ Created favorites
+✈️ Creating trips...
+✅ Created trips
+📍 Adding places to trips...
+✅ Added places to trips
+👥 Adding trip members...
+✅ Added trip members
+
+========================================
+🎉 Database seeding completed successfully!
+========================================
+📁 Categories: 6
+🎯 Amenities: 8
+👥 Users: 4
+📍 Places: 6
+✈️ Trips: 2
+========================================
+```
+
+#### Idempotency Verification
+
+Running seed multiple times produces the same result (no duplicates):
+
+| Entity | After 1st Seed | After 2nd Seed |
+|--------|----------------|----------------|
+| Users | 4 | 4 |
+| Categories | 6 | 6 |
+| Places | 6 | 6 |
+| Reviews | 4 | 4 |
+
+### Production Data Protection
+
+#### Before Running Migrations in Production:
+
+1. **Create Database Backup**
+   ```bash
+   pg_dump -h localhost -U postgres travelmate_db > backup_$(date +%Y%m%d).sql
+   ```
+
+2. **Test in Staging First**
+   - Apply migration to staging environment
+   - Verify application functionality
+   - Check for data integrity
+
+3. **Use Transaction-Safe Migrations**
+   - Prisma wraps migrations in transactions by default
+   - Failed migrations automatically rollback
+
+4. **Never Use `migrate reset` in Production**
+   - Use `migrate deploy` for production:
+   ```bash
+   npx prisma migrate deploy
+   ```
+
+### NPM Scripts for Migrations
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `npm run db:migrate` | `prisma migrate dev` | Create & apply migration (dev) |
+| `npm run db:push` | `prisma db push` | Push schema without migration |
+| `npm run db:seed` | `prisma db seed` | Run seed script |
+| `npm run db:reset` | `prisma migrate reset` | Reset DB & re-seed |
+| `npm run db:studio` | `prisma studio` | Open visual editor |
+
+### Migration Best Practices
+
+1. **Descriptive Names**: Use clear migration names (`add_user_phone_number`, not `update1`)
+2. **Small Changes**: One logical change per migration
+3. **Review SQL**: Always check generated SQL before applying
+4. **Test Locally**: Run `migrate dev` locally before pushing
+5. **Version Control**: Commit migration files with your code
+6. **Never Edit Applied Migrations**: Create new migrations for changes
+
+### Reflection on Migrations & Seeding
+
+Database migrations provide:
+
+- **Version Control for Schema**: Track every change like code
+- **Team Collaboration**: Everyone has the same database structure
+- **Reproducible Environments**: Dev, staging, production stay in sync
+- **Safe Deployments**: Migrations are atomic and reversible
+- **Documentation**: Migration history shows database evolution
+
+The idempotent seed script ensures:
+
+- **Consistent Test Data**: Same starting point for all developers
+- **Safe Re-runs**: No duplicate data on multiple executions
+- **Quick Onboarding**: New team members get populated DB instantly
+
+---
+
+## �🗂️ Database Schema Design (Prisma ORM)
 
 This project uses **Prisma ORM** with a normalized PostgreSQL database schema following industry best practices.
 
