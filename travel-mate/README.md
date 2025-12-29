@@ -2,7 +2,300 @@
 
 A full-stack travel destination application built with Next.js, TypeScript, PostgreSQL, and Redis.
 
-## �️ Database Schema Design (Prisma ORM)
+---
+
+## 🔧 Prisma ORM Setup & Client Initialization
+
+### Overview
+
+This project uses **Prisma ORM** as the database toolkit for type-safe database access. Prisma provides:
+
+- **Type Safety**: Auto-generated TypeScript types from your database schema
+- **Query Reliability**: Compile-time validation prevents SQL injection and runtime errors
+- **Developer Productivity**: Intuitive API, auto-completion, and database migrations
+- **Database Agnostic**: Easy switching between databases (PostgreSQL, MySQL, SQLite, etc.)
+
+### Installation & Setup
+
+#### Step 1: Install Prisma Dependencies
+
+```bash
+# Install Prisma CLI as dev dependency
+npm install prisma --save-dev
+
+# Install Prisma Client
+npm install @prisma/client
+```
+
+#### Step 2: Initialize Prisma
+
+```bash
+# Initialize Prisma with PostgreSQL
+npx prisma init --datasource-provider postgresql
+```
+
+This creates:
+- `/prisma/schema.prisma` - Database schema definition
+- `.env` file with `DATABASE_URL` placeholder
+
+#### Step 3: Configure Database URL
+
+In your `.env` file:
+
+```env
+DATABASE_URL="postgresql://postgres:postgres123@localhost:5432/travelmate_db"
+```
+
+For Docker environments:
+```env
+DATABASE_URL="postgresql://postgres:postgres123@db:5432/travelmate_db"
+```
+
+### Schema Definition
+
+The schema is defined in `prisma/schema.prisma`:
+
+```prisma
+// Database provider configuration
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Prisma Client generator
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Example model definitions
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique @db.VarChar(255)
+  name          String    @db.VarChar(255)
+  role          UserRole  @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  reviews       Review[]
+  favorites     Favorite[]
+  trips         Trip[]
+}
+
+model Place {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(255)
+  slug        String   @unique @db.VarChar(255)
+  description String?  @db.Text
+  rating      Decimal  @default(0) @db.Decimal(2, 1)
+  categoryId  String   @db.Uuid
+  category    Category @relation(fields: [categoryId], references: [id])
+  
+  reviews     Review[]
+  favorites   Favorite[]
+}
+```
+
+### Prisma Client Initialization
+
+The Prisma Client is initialized in `lib/prisma.ts`:
+
+```typescript
+import { PrismaClient } from "@prisma/client";
+
+const globalForPrisma = global as unknown as {
+  prisma: PrismaClient | undefined;
+};
+
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log:
+      process.env.NODE_ENV === "development"
+        ? ["query", "info", "warn", "error"]
+        : ["error"],
+  });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}
+
+export default prisma;
+```
+
+**Why this pattern?**
+- **Singleton Pattern**: Prevents multiple PrismaClient instances during development hot-reloads
+- **Conditional Logging**: Verbose logging in development, minimal in production
+- **Global Caching**: Client survives Next.js hot module replacement
+
+### Generate Prisma Client
+
+After defining or updating your schema:
+
+```bash
+npx prisma generate
+```
+
+This generates TypeScript types and the Prisma Client in `node_modules/@prisma/client`.
+
+### Testing the Connection
+
+#### Using the Test API Endpoint
+
+Access `http://localhost:3000/api/db-test` to verify the connection:
+
+```json
+{
+  "status": "connected",
+  "message": "Prisma Client successfully connected to PostgreSQL database",
+  "timestamp": "2024-12-29T10:30:00.000Z",
+  "database": {
+    "provider": "postgresql",
+    "stats": {
+      "users": 4,
+      "categories": 6,
+      "places": 6,
+      "reviews": 12,
+      "trips": 3
+    }
+  }
+}
+```
+
+#### Using the Test Query Function
+
+```typescript
+import { getUsers, getPlaces, getDatabaseStats } from "@/lib/db-test";
+
+// Get all users
+const users = await getUsers();
+
+// Get all places with categories
+const places = await getPlaces();
+
+// Get database statistics
+const stats = await getDatabaseStats();
+```
+
+### Common Prisma Commands
+
+| Command | Description |
+|---------|-------------|
+| `npx prisma generate` | Generate Prisma Client |
+| `npx prisma migrate dev --name <name>` | Create and apply migration |
+| `npx prisma migrate reset` | Reset database (deletes all data) |
+| `npx prisma db push` | Push schema changes without migration |
+| `npx prisma db seed` | Run seed script |
+| `npx prisma studio` | Open visual database editor |
+| `npx prisma format` | Format schema file |
+| `npm run db:test` | Run database connection test |
+
+### Connection Test Output
+
+Running `npm run db:test` produces the following successful output:
+
+```
+🔗 Testing Prisma Database Connection...
+
+════════════════════════════════════════════════════════════
+prisma:info Starting a postgresql pool with 17 connections.
+prisma:query SELECT 1
+✅ Database connection: SUCCESSFUL
+
+📊 Database Statistics:
+────────────────────────────────────────────────────────────
+  👥 Users:      4
+  📁 Categories: 6
+  📍 Places:     6
+  ⭐ Reviews:    4
+  ✈️  Trips:      4
+────────────────────────────────────────────────────────────
+
+📋 Sample Data:
+────────────────────────────────────────────────────────────
+
+📁 Categories:
+   - Landmarks (landmarks)
+   - Beaches (beaches)
+   - Adventure (adventure)
+   - Museums (museums)
+   - Nature (nature)
+
+📍 Top Places:
+   - Grand Canyon (Arizona, United States) - ⭐ 4.9 [Nature]
+   - Great Barrier Reef (Queensland, Australia) - ⭐ 4.9 [Nature]
+   - Machu Picchu (Cusco Region, Peru) - ⭐ 4.8 [Historical]
+   - Santorini (Santorini, Greece) - ⭐ 4.8 [Beaches]
+   - Eiffel Tower (Paris, France) - ⭐ 4.7 [Landmarks]
+
+👥 Users:
+   - John Traveler (john.traveler@example.com) [USER]
+   - Admin User (admin@travelmate.com) [ADMIN]
+   - Mike Wanderer (mike.wanderer@example.com) [MODERATOR]
+   - Sarah Explorer (sarah.explorer@example.com) [USER]
+
+════════════════════════════════════════════════════════════
+🎉 Prisma Client Successfully Connected to PostgreSQL!
+════════════════════════════════════════════════════════════
+```
+
+### Prisma Studio Screenshot
+
+Access Prisma Studio at `http://localhost:5555` after running `npm run db:studio`:
+
+![Prisma Studio](docs/screenshots/prisma-studio.png)
+
+*Prisma Studio provides a visual interface to browse and edit database records.*
+
+### Benefits of Prisma in This Project
+
+1. **Type-Safe Queries**
+   ```typescript
+   // Auto-completed, type-checked query
+   const user = await prisma.user.findUnique({
+     where: { email: "user@example.com" },
+     include: { reviews: true, favorites: true }
+   });
+   // user is fully typed with reviews and favorites
+   ```
+
+2. **Relation Handling**
+   ```typescript
+   // Easy nested queries
+   const placesWithReviews = await prisma.place.findMany({
+     include: {
+       category: true,
+       reviews: { where: { status: "APPROVED" } }
+     }
+   });
+   ```
+
+3. **Transaction Support**
+   ```typescript
+   await prisma.$transaction([
+     prisma.review.create({ data: reviewData }),
+     prisma.place.update({ where: { id: placeId }, data: { reviewCount: { increment: 1 } } })
+   ]);
+   ```
+
+4. **Migration History**
+   - All schema changes tracked in `/prisma/migrations`
+   - Safe, versioned database evolution
+
+### Reflection
+
+Prisma ORM significantly improves the development experience by:
+
+- **Eliminating boilerplate**: No manual SQL writing or type definitions
+- **Reducing errors**: Compile-time type checking catches issues early
+- **Improving maintainability**: Schema-as-code with version control
+- **Accelerating development**: Auto-completion and intuitive API
+- **Ensuring data integrity**: Built-in validation and constraint handling
+
+The integration with Next.js App Router is seamless, allowing direct database access in Server Components and API routes without additional configuration.
+
+---
+
+## 🗂️ Database Schema Design (Prisma ORM)
 
 This project uses **Prisma ORM** with a normalized PostgreSQL database schema following industry best practices.
 
