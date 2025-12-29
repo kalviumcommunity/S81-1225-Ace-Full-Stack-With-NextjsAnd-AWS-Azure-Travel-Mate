@@ -45,6 +45,7 @@ model User {
   passwordHash  String?   @db.VarChar(255)
   avatarUrl     String?   @db.Text
   bio           String?   @db.Text
+  phoneNumber   String?   @db.VarChar(20) // Added for user contact
   role          UserRole  @default(USER)
   emailVerified Boolean   @default(false)
   isActive      Boolean   @default(true)
