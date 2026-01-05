@@ -4,6 +4,335 @@ A full-stack travel destination application built with Next.js, TypeScript, Post
 
 ---
 
+## 🌐 RESTful API Route Structure
+
+This section documents the RESTful API architecture implemented using Next.js file-based routing under the `/api/` directory.
+
+### API Directory Structure
+
+```
+app/
+└── api/
+    ├── users/
+    │   ├── route.ts           # GET (list), POST (create)
+    │   └── [id]/
+    │       └── route.ts       # GET, PUT, DELETE (by ID)
+    ├── places/
+    │   ├── route.ts           # GET (list), POST (create)
+    │   └── [id]/
+    │       └── route.ts       # GET, PUT, DELETE (by ID)
+    ├── trips/
+    │   ├── route.ts           # GET (list), POST (create)
+    │   └── [id]/
+    │       └── route.ts       # GET, PUT, DELETE (by ID)
+    ├── reviews/
+    │   ├── route.ts           # GET (list), POST (create)
+    │   └── [id]/
+    │       └── route.ts       # GET, PUT, DELETE (by ID)
+    ├── categories/
+    │   ├── route.ts           # GET (list), POST (create)
+    │   └── [id]/
+    │       └── route.ts       # GET, PUT, DELETE (by ID)
+    ├── bookings/
+    │   ├── route.ts           # GET (list), POST (create)
+    │   └── [id]/
+    │       └── route.ts       # GET, PUT, DELETE (by ID)
+    ├── transactions/
+    │   └── route.ts           # Transaction operations
+    ├── query-optimization/
+    │   └── route.ts           # Query optimization demos
+    ├── health/
+    │   └── route.ts           # Health check
+    └── db-test/
+        └── route.ts           # Database connectivity test
+```
+
+### RESTful Naming Conventions
+
+| Convention | Implementation |
+|------------|----------------|
+| **Plural Nouns** | `/api/users`, `/api/places`, `/api/trips` |
+| **Resource IDs** | `/api/users/[id]`, `/api/places/[id]` |
+| **HTTP Methods** | GET (read), POST (create), PUT (update), DELETE (remove) |
+| **Query Parameters** | Filtering, sorting, pagination |
+| **Status Codes** | 200, 201, 400, 404, 409, 500 |
+
+### API Endpoints Reference
+
+#### Users API (`/api/users`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/users` | List all users with pagination |
+| POST | `/api/users` | Create a new user |
+| GET | `/api/users/[id]` | Get a specific user |
+| PUT | `/api/users/[id]` | Update a user |
+| DELETE | `/api/users/[id]` | Delete (soft) a user |
+
+**Sample Requests:**
+
+```bash
+# List users with pagination and filtering
+curl -X GET "http://localhost:3000/api/users?page=1&limit=10&role=USER&search=john"
+
+# Create a new user
+curl -X POST http://localhost:3000/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"John Doe","email":"john@example.com"}'
+
+# Get user by ID
+curl -X GET http://localhost:3000/api/users/abc123-uuid
+
+# Update user
+curl -X PUT http://localhost:3000/api/users/abc123-uuid \
+  -H "Content-Type: application/json" \
+  -d '{"name":"John Updated","bio":"Travel enthusiast"}'
+
+# Delete user
+curl -X DELETE http://localhost:3000/api/users/abc123-uuid
+```
+
+**Sample Response (GET /api/users):**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "abc123-uuid",
+      "email": "john@example.com",
+      "name": "John Doe",
+      "role": "USER",
+      "isActive": true,
+      "createdAt": "2025-01-05T00:00:00.000Z",
+      "_count": {
+        "reviews": 5,
+        "trips": 3,
+        "favorites": 10,
+        "bookings": 2
+      }
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 50,
+    "totalPages": 5,
+    "hasNextPage": true,
+    "hasPrevPage": false
+  }
+}
+```
+
+#### Places API (`/api/places`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/places` | List all places with filters |
+| POST | `/api/places` | Create a new place |
+| GET | `/api/places/[id]` | Get place details |
+| PUT | `/api/places/[id]` | Update a place |
+| DELETE | `/api/places/[id]` | Delete (soft) a place |
+
+**Sample Requests:**
+
+```bash
+# List places with filtering
+curl -X GET "http://localhost:3000/api/places?country=France&city=Paris&minRating=4&isFeatured=true"
+
+# Create a new place
+curl -X POST http://localhost:3000/api/places \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Eiffel Tower","country":"France","city":"Paris","categoryId":"cat-uuid"}'
+```
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| page | number | Page number (default: 1) |
+| limit | number | Items per page (default: 10, max: 100) |
+| country | string | Filter by country |
+| city | string | Filter by city |
+| categoryId | string | Filter by category |
+| minRating | number | Minimum rating filter |
+| maxRating | number | Maximum rating filter |
+| isFeatured | boolean | Filter featured places |
+| isActive | boolean | Filter active places |
+| priceLevel | number | Filter by price level (1-5) |
+| search | string | Search in name/description |
+| sortBy | string | Sort field (name, rating, createdAt) |
+| sortOrder | string | Sort direction (asc, desc) |
+
+#### Trips API (`/api/trips`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/trips` | List all trips |
+| POST | `/api/trips` | Create a new trip |
+| GET | `/api/trips/[id]` | Get trip details with places |
+| PUT | `/api/trips/[id]` | Update a trip |
+| DELETE | `/api/trips/[id]` | Cancel a trip |
+
+**Sample Requests:**
+
+```bash
+# List trips for a user
+curl -X GET "http://localhost:3000/api/trips?userId=user-uuid&status=PLANNING"
+
+# Create a trip
+curl -X POST http://localhost:3000/api/trips \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Paris Adventure","userId":"user-uuid","startDate":"2025-06-01","endDate":"2025-06-10"}'
+```
+
+#### Reviews API (`/api/reviews`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/reviews` | List all reviews |
+| POST | `/api/reviews` | Create a new review |
+| GET | `/api/reviews/[id]` | Get review details |
+| PUT | `/api/reviews/[id]` | Update a review |
+| DELETE | `/api/reviews/[id]` | Delete a review |
+
+**Sample Requests:**
+
+```bash
+# List reviews for a place
+curl -X GET "http://localhost:3000/api/reviews?placeId=place-uuid&status=APPROVED"
+
+# Create a review
+curl -X POST http://localhost:3000/api/reviews \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"user-uuid","placeId":"place-uuid","rating":5,"title":"Amazing!","comment":"Best trip ever"}'
+```
+
+#### Categories API (`/api/categories`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/categories` | List all categories |
+| POST | `/api/categories` | Create a category |
+| GET | `/api/categories/[id]` | Get category with places |
+| PUT | `/api/categories/[id]` | Update a category |
+| DELETE | `/api/categories/[id]` | Delete a category |
+
+**Sample Requests:**
+
+```bash
+# List active categories
+curl -X GET "http://localhost:3000/api/categories?isActive=true"
+
+# Create a category
+curl -X POST http://localhost:3000/api/categories \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Beach Resorts","description":"Tropical beach destinations"}'
+```
+
+#### Bookings API (`/api/bookings`)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/bookings` | List all bookings |
+| POST | `/api/bookings` | Create a new booking |
+| GET | `/api/bookings/[id]` | Get booking with payments |
+| PUT | `/api/bookings/[id]` | Update a booking |
+| DELETE | `/api/bookings/[id]` | Cancel a booking |
+
+**Sample Requests:**
+
+```bash
+# List bookings with filters
+curl -X GET "http://localhost:3000/api/bookings?userId=user-uuid&status=CONFIRMED"
+
+# Create a booking
+curl -X POST http://localhost:3000/api/bookings \
+  -H "Content-Type: application/json" \
+  -d '{"userId":"user-uuid","placeId":"place-uuid","checkIn":"2025-06-01","checkOut":"2025-06-05","totalAmount":500}'
+```
+
+### Error Response Format
+
+All error responses follow a consistent format:
+
+```json
+{
+  "success": false,
+  "error": "Error message describing what went wrong",
+  "details": {
+    "field": "Specific field error if applicable"
+  }
+}
+```
+
+**HTTP Status Codes:**
+| Code | Meaning | Usage |
+|------|---------|-------|
+| 200 | OK | Successful GET, PUT, DELETE |
+| 201 | Created | Successful POST |
+| 400 | Bad Request | Validation error |
+| 404 | Not Found | Resource doesn't exist |
+| 409 | Conflict | Duplicate resource |
+| 500 | Server Error | Internal error |
+
+### Pagination Details
+
+All list endpoints support pagination:
+
+```json
+{
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 150,
+    "totalPages": 15,
+    "hasNextPage": true,
+    "hasPrevPage": false
+  }
+}
+```
+
+**Pagination Parameters:**
+- `page`: Current page number (default: 1)
+- `limit`: Items per page (default: 10, max: 100)
+
+### Why Consistent API Structure Matters
+
+#### 1. **Frontend Integration**
+- Predictable endpoints reduce guesswork
+- Consistent response formats simplify data handling
+- Unified error handling across all API calls
+
+#### 2. **Team Collaboration**
+- Self-documenting API structure
+- Easy onboarding for new developers
+- Clear contract between frontend and backend
+
+#### 3. **Scalability**
+- Easy to add new resources following the pattern
+- Consistent patterns for authentication/authorization
+- Predictable caching strategies
+
+#### 4. **Maintenance**
+- Bugs are easier to find and fix
+- Code reviews are faster
+- Testing is more straightforward
+
+### Reflection: API Design Best Practices
+
+> **"How does consistent API naming and structure make integration easier for your teammates or frontend developers?"**
+
+1. **Predictability**: When endpoints follow `/api/{resource}` and `/api/{resource}/{id}` patterns, developers can guess endpoint URLs without documentation.
+
+2. **Standardized Responses**: Consistent `{ success, data, pagination }` format means frontend can use the same response handlers.
+
+3. **Clear Semantics**: HTTP verbs (GET, POST, PUT, DELETE) clearly indicate the operation, reducing confusion.
+
+4. **Documentation-Friendly**: Well-structured APIs are easier to document with tools like OpenAPI/Swagger.
+
+5. **Testing Efficiency**: Uniform patterns enable reusable test utilities and mock data structures.
+
+---
+
 ## 🔧 Prisma ORM Setup & Client Initialization
 
 ### Overview
