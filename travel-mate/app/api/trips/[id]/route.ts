@@ -10,9 +10,16 @@
  * - DELETE /api/trips/[id]  - Delete a trip
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import {
+  sendSuccess,
+  sendNotFound,
+  sendBadRequest,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -92,24 +99,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!trip) {
-      return NextResponse.json(
-        { success: false, error: "Trip not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Trip not found", ERROR_CODES.TRIP_NOT_FOUND);
     }
 
     logger.info("Trip fetched successfully", { tripId: id });
 
-    return NextResponse.json({
-      success: true,
-      data: trip,
-    });
+    return sendSuccess(trip, "Trip fetched successfully");
   } catch (error) {
     logger.error("Failed to fetch trip", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch trip" },
-      { status: 500 }
-    );
+    return sendError("Failed to fetch trip", ERROR_CODES.TRIP_FETCH_ERROR, 500);
   }
 }
 
@@ -127,10 +125,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingTrip) {
-      return NextResponse.json(
-        { success: false, error: "Trip not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Trip not found", ERROR_CODES.TRIP_NOT_FOUND);
     }
 
     // Extract updatable fields
@@ -162,9 +157,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (coverImage !== undefined) updateData.coverImage = coverImage;
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No fields to update" },
-        { status: 400 }
+      return sendBadRequest(
+        "No fields to update",
+        ERROR_CODES.VALIDATION_ERROR
       );
     }
 
@@ -196,16 +191,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Trip updated successfully", { tripId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Trip updated successfully",
-      data: trip,
-    });
+    return sendSuccess(trip, "Trip updated successfully");
   } catch (error) {
     logger.error("Failed to update trip", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to update trip" },
-      { status: 500 }
+    return sendError(
+      "Failed to update trip",
+      ERROR_CODES.TRIP_UPDATE_ERROR,
+      500
     );
   }
 }
@@ -223,10 +215,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingTrip) {
-      return NextResponse.json(
-        { success: false, error: "Trip not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Trip not found", ERROR_CODES.TRIP_NOT_FOUND);
     }
 
     // Soft delete by changing status to CANCELLED
@@ -237,15 +226,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Trip deleted successfully", { tripId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Trip deleted successfully",
-    });
+    return sendSuccess(null, "Trip deleted successfully");
   } catch (error) {
     logger.error("Failed to delete trip", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to delete trip" },
-      { status: 500 }
+    return sendError(
+      "Failed to delete trip",
+      ERROR_CODES.TRIP_DELETE_ERROR,
+      500
     );
   }
 }

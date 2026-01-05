@@ -333,7 +333,198 @@ All list endpoints support pagination:
 
 ---
 
-## 🔧 Prisma ORM Setup & Client Initialization
+## � Global API Response Handler
+
+### Overview
+
+The Global API Response Handler is a centralized utility (`lib/responseHandler.ts`) that ensures every API endpoint returns responses in a consistent, structured, and predictable format. This approach significantly improves developer experience (DX) and system observability.
+
+### Unified Response Format
+
+Every API response follows this standardized envelope structure:
+
+```typescript
+interface ApiResponse<T = unknown> {
+  success: boolean;      // Operation result indicator
+  message: string;       // Human-readable status message
+  data?: T;              // Response payload (optional on errors)
+  error?: {              // Error details (only on failures)
+    code: string;        // Machine-readable error code
+    details?: unknown;   // Additional error context
+  };
+  timestamp: string;     // ISO 8601 timestamp
+}
+```
+
+### Response Examples
+
+**Success Response:**
+```json
+{
+  "success": true,
+  "message": "User created successfully",
+  "data": {
+    "id": "abc123-uuid",
+    "email": "john@example.com",
+    "name": "John Doe",
+    "createdAt": "2025-01-05T10:30:00.000Z"
+  },
+  "timestamp": "2025-01-05T10:30:00.500Z"
+}
+```
+
+**Paginated Response:**
+```json
+{
+  "success": true,
+  "message": "Users fetched successfully",
+  "data": [...],
+  "pagination": {
+    "page": 1,
+    "limit": 10,
+    "total": 150,
+    "totalPages": 15,
+    "hasNextPage": true,
+    "hasPrevPage": false
+  },
+  "filters": {
+    "role": "USER",
+    "isActive": true
+  },
+  "timestamp": "2025-01-05T10:30:00.500Z"
+}
+```
+
+**Error Response:**
+```json
+{
+  "success": false,
+  "message": "User not found",
+  "error": {
+    "code": "E600",
+    "details": null
+  },
+  "timestamp": "2025-01-05T10:30:00.500Z"
+}
+```
+
+**Validation Error Response:**
+```json
+{
+  "success": false,
+  "message": "Validation failed",
+  "error": {
+    "code": "E100",
+    "details": {
+      "email": "Email is required",
+      "name": "Name must be at least 2 characters"
+    }
+  },
+  "timestamp": "2025-01-05T10:30:00.500Z"
+}
+```
+
+### Helper Functions
+
+The response handler provides convenient helper functions:
+
+| Function | HTTP Status | Use Case |
+|----------|-------------|----------|
+| `sendSuccess(data, message, status)` | 200/201 | Successful operations |
+| `sendPaginatedSuccess(data, pagination, message, filters)` | 200 | List responses with pagination |
+| `sendError(message, code, status, details)` | 4XX/5XX | Generic error responses |
+| `sendValidationError(fieldErrors)` | 400 | Input validation failures |
+| `sendNotFound(resource, code)` | 404 | Resource not found |
+| `sendConflict(message, code)` | 409 | Duplicate/conflict errors |
+| `sendBadRequest(message, code, details)` | 400 | Invalid request errors |
+| `sendUnauthorized(message)` | 401 | Authentication required |
+| `sendForbidden(message)` | 403 | Insufficient permissions |
+| `sendInternalError(message, details)` | 500 | Server-side errors |
+| `sendDatabaseError(message, details)` | 500 | Database operation failures |
+
+### Error Codes Dictionary
+
+Error codes are defined in `lib/errorCodes.ts` for consistent error identification:
+
+| Code Range | Category | Examples |
+|------------|----------|----------|
+| E1XX | Client Errors | E100 (Validation), E101 (Bad Request) |
+| E2XX | Auth Errors | E200 (Unauthorized), E201 (Forbidden) |
+| E3XX | Resource Errors | E300 (Not Found), E301 (Conflict) |
+| E4XX | Business Logic | E400 (Rule Violation), E402 (Limit Exceeded) |
+| E5XX | Server Errors | E500 (Internal), E501 (Database) |
+| E6XX | Domain-Specific | E600-E658 (Entity-specific errors) |
+
+**Domain-Specific Error Codes:**
+
+| Entity | Not Found | CRUD Errors | Other |
+|--------|-----------|-------------|-------|
+| User | E600 | E601-E604 | E605 (Duplicate Email) |
+| Place | E610 | E611-E614 | E615 (Duplicate Slug) |
+| Trip | E620 | E621-E624 | - |
+| Review | E630 | E631-E634 | E635 (Duplicate), E636 (Invalid Rating) |
+| Category | E640 | E641-E644 | E645 (Duplicate), E646 (Has Places) |
+| Booking | E650 | E651-E654 | E656-E658 (Date/Status errors) |
+
+### Usage Example
+
+```typescript
+// In your API route handler
+import { sendSuccess, sendNotFound, sendValidationError } from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
+
+export async function GET(request: NextRequest, { params }: RouteParams) {
+  const { id } = await params;
+  
+  const user = await prisma.user.findUnique({ where: { id } });
+  
+  if (!user) {
+    return sendNotFound("User not found", ERROR_CODES.USER_NOT_FOUND);
+  }
+  
+  return sendSuccess(user, "User fetched successfully");
+}
+
+export async function POST(request: NextRequest) {
+  const body = await request.json();
+  
+  if (!body.email || !body.name) {
+    return sendValidationError({
+      email: !body.email ? "Email is required" : null,
+      name: !body.name ? "Name is required" : null,
+    });
+  }
+  
+  const user = await prisma.user.create({ data: body });
+  return sendSuccess(user, "User created successfully", 201);
+}
+```
+
+### Reflection: Benefits of Standardized Responses
+
+> **"How does a global response handler improve developer experience (DX) and observability?"**
+
+1. **Improved DX (Developer Experience)**:
+   - **Predictable Structure**: Frontend developers always know the response shape, reducing guesswork
+   - **Consistent Error Handling**: Single error handling pattern across all API consumers
+   - **Self-Documenting**: Response structure serves as implicit documentation
+   - **Reduced Boilerplate**: Helper functions eliminate repetitive response formatting code
+
+2. **Enhanced Observability**:
+   - **Traceable Error Codes**: Machine-readable codes (E600, E651) enable precise log filtering and alerting
+   - **Timestamped Responses**: Every response includes a timestamp for debugging timing issues
+   - **Structured Logging**: Consistent format enables structured log aggregation in tools like Datadog, ELK
+   - **Error Correlation**: Error codes map directly to error descriptions for monitoring dashboards
+
+3. **Production Benefits**:
+   - **Faster Debugging**: Error code + timestamp = quick issue identification
+   - **Better Monitoring**: Track error rates by code category (E1XX client vs E5XX server)
+   - **API Analytics**: Uniform success/failure flags enable accurate metrics
+   - **Incident Response**: Clear error messages and codes speed up root cause analysis
+
+---
+
+## �🔧 Prisma ORM Setup & Client Initialization
 
 ### Overview
 

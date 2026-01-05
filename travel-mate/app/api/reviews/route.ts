@@ -9,10 +9,20 @@
  * - POST /api/reviews       - Create a new review
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { Prisma } from "@prisma/client";
+import {
+  sendPaginatedSuccess,
+  sendSuccess,
+  sendValidationError,
+  sendNotFound,
+  sendConflict,
+  sendBadRequest,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 // ============================================
 // GET /api/reviews - List reviews with pagination
@@ -133,10 +143,9 @@ export async function GET(request: NextRequest) {
 
     logger.info("Reviews fetched successfully", { page, limit, total });
 
-    return NextResponse.json({
-      success: true,
-      data: reviews,
-      pagination: {
+    return sendPaginatedSuccess(
+      reviews,
+      {
         page,
         limit,
         total,
@@ -144,7 +153,8 @@ export async function GET(request: NextRequest) {
         hasNextPage,
         hasPrevPage,
       },
-      filters: {
+      "Reviews fetched successfully",
+      {
         userId,
         placeId,
         status,
@@ -153,13 +163,14 @@ export async function GET(request: NextRequest) {
         search,
         sortBy: orderByField,
         sortOrder,
-      },
-    });
+      }
+    );
   } catch (error) {
     logger.error("Failed to fetch reviews", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch reviews" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch reviews",
+      ERROR_CODES.REVIEW_FETCH_ERROR,
+      500
     );
   }
 }
@@ -175,25 +186,18 @@ export async function POST(request: NextRequest) {
     const { userId, placeId, rating, title, comment, visitDate } = body;
 
     if (!userId || !placeId || rating === undefined) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Validation failed",
-          details: {
-            userId: !userId ? "User ID is required" : null,
-            placeId: !placeId ? "Place ID is required" : null,
-            rating: rating === undefined ? "Rating is required" : null,
-          },
-        },
-        { status: 400 }
-      );
+      return sendValidationError({
+        userId: !userId ? "User ID is required" : null,
+        placeId: !placeId ? "Place ID is required" : null,
+        rating: rating === undefined ? "Rating is required" : null,
+      });
     }
 
     // Validate rating range
     if (rating < 1 || rating > 5) {
-      return NextResponse.json(
-        { success: false, error: "Rating must be between 1 and 5" },
-        { status: 400 }
+      return sendBadRequest(
+        "Rating must be between 1 and 5",
+        ERROR_CODES.REVIEW_INVALID_RATING
       );
     }
 
@@ -203,10 +207,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return sendNotFound("User not found", ERROR_CODES.USER_NOT_FOUND);
     }
 
     // Check if place exists
@@ -215,10 +216,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!place) {
-      return NextResponse.json(
-        { success: false, error: "Place not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Place not found", ERROR_CODES.PLACE_NOT_FOUND);
     }
 
     // Check if user already reviewed this place
@@ -232,9 +230,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingReview) {
-      return NextResponse.json(
-        { success: false, error: "User has already reviewed this place" },
-        { status: 409 }
+      return sendConflict(
+        "User has already reviewed this place",
+        ERROR_CODES.REVIEW_DUPLICATE
       );
     }
 
@@ -277,19 +275,13 @@ export async function POST(request: NextRequest) {
 
     logger.info("Review created successfully", { reviewId: review.id });
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Review created successfully",
-        data: review,
-      },
-      { status: 201 }
-    );
+    return sendSuccess(review, "Review created successfully", 201);
   } catch (error) {
     logger.error("Failed to create review", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to create review" },
-      { status: 500 }
+    return sendError(
+      "Failed to create review",
+      ERROR_CODES.REVIEW_CREATE_ERROR,
+      500
     );
   }
 }

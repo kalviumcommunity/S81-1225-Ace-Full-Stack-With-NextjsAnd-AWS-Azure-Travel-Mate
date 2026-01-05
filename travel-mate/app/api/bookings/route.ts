@@ -9,10 +9,19 @@
  * - POST /api/bookings       - Create a new booking
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { Prisma } from "@prisma/client";
+import {
+  sendPaginatedSuccess,
+  sendSuccess,
+  sendValidationError,
+  sendNotFound,
+  sendBadRequest,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 // ============================================
 // GET /api/bookings - List bookings with pagination
@@ -150,10 +159,9 @@ export async function GET(request: NextRequest) {
 
     logger.info("Bookings fetched successfully", { page, limit, total });
 
-    return NextResponse.json({
-      success: true,
-      data: bookings,
-      pagination: {
+    return sendPaginatedSuccess(
+      bookings,
+      {
         page,
         limit,
         total,
@@ -161,7 +169,8 @@ export async function GET(request: NextRequest) {
         hasNextPage,
         hasPrevPage,
       },
-      filters: {
+      "Bookings fetched successfully",
+      {
         userId,
         placeId,
         status,
@@ -170,13 +179,14 @@ export async function GET(request: NextRequest) {
         checkInTo,
         sortBy: orderByField,
         sortOrder,
-      },
-    });
+      }
+    );
   } catch (error) {
     logger.error("Failed to fetch bookings", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch bookings" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch bookings",
+      ERROR_CODES.BOOKING_FETCH_ERROR,
+      500
     );
   }
 }
@@ -201,20 +211,13 @@ export async function POST(request: NextRequest) {
     } = body;
 
     if (!userId || !placeId || !checkIn || !checkOut || !totalAmount) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Validation failed",
-          details: {
-            userId: !userId ? "User ID is required" : null,
-            placeId: !placeId ? "Place ID is required" : null,
-            checkIn: !checkIn ? "Check-in date is required" : null,
-            checkOut: !checkOut ? "Check-out date is required" : null,
-            totalAmount: !totalAmount ? "Total amount is required" : null,
-          },
-        },
-        { status: 400 }
-      );
+      return sendValidationError({
+        userId: !userId ? "User ID is required" : null,
+        placeId: !placeId ? "Place ID is required" : null,
+        checkIn: !checkIn ? "Check-in date is required" : null,
+        checkOut: !checkOut ? "Check-out date is required" : null,
+        totalAmount: !totalAmount ? "Total amount is required" : null,
+      });
     }
 
     // Validate dates
@@ -222,9 +225,9 @@ export async function POST(request: NextRequest) {
     const checkOutDate = new Date(checkOut);
 
     if (checkOutDate <= checkInDate) {
-      return NextResponse.json(
-        { success: false, error: "Check-out date must be after check-in date" },
-        { status: 400 }
+      return sendBadRequest(
+        "Check-out date must be after check-in date",
+        ERROR_CODES.BOOKING_INVALID_DATES
       );
     }
 
@@ -234,10 +237,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return sendNotFound("User not found", ERROR_CODES.USER_NOT_FOUND);
     }
 
     // Check if place exists
@@ -246,10 +246,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!place) {
-      return NextResponse.json(
-        { success: false, error: "Place not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Place not found", ERROR_CODES.PLACE_NOT_FOUND);
     }
 
     // Generate unique booking reference
@@ -304,19 +301,13 @@ export async function POST(request: NextRequest) {
 
     logger.info("Booking created successfully", { bookingId: booking.id });
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Booking created successfully",
-        data: booking,
-      },
-      { status: 201 }
-    );
+    return sendSuccess(booking, "Booking created successfully", 201);
   } catch (error) {
     logger.error("Failed to create booking", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to create booking" },
-      { status: 500 }
+    return sendError(
+      "Failed to create booking",
+      ERROR_CODES.BOOKING_CREATE_ERROR,
+      500
     );
   }
 }
