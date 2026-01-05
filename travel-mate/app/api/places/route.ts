@@ -9,10 +9,18 @@
  * - POST /api/places       - Create a new place
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { Prisma } from "@prisma/client";
+import {
+  sendPaginatedSuccess,
+  sendSuccess,
+  sendValidationError,
+  sendNotFound,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 // ============================================
 // GET /api/places - List places with pagination
@@ -160,18 +168,11 @@ export async function GET(request: NextRequest) {
 
     logger.info("Places fetched successfully", { page, limit, total });
 
-    return NextResponse.json({
-      success: true,
-      data: places,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasNextPage,
-        hasPrevPage,
-      },
-      filters: {
+    return sendPaginatedSuccess(
+      places,
+      { page, limit, total, totalPages, hasNextPage, hasPrevPage },
+      "Places fetched successfully",
+      {
         country,
         city,
         categoryId,
@@ -185,13 +186,14 @@ export async function GET(request: NextRequest) {
         search,
         sortBy: orderByField,
         sortOrder,
-      },
-    });
+      }
+    );
   } catch (error) {
     logger.error("Failed to fetch places", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch places" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch places",
+      ERROR_CODES.PLACE_FETCH_ERROR,
+      500
     );
   }
 }
@@ -219,18 +221,11 @@ export async function POST(request: NextRequest) {
     } = body;
 
     if (!name || !country || !categoryId) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Validation failed",
-          details: {
-            name: !name ? "Name is required" : null,
-            country: !country ? "Country is required" : null,
-            categoryId: !categoryId ? "Category ID is required" : null,
-          },
-        },
-        { status: 400 }
-      );
+      return sendValidationError({
+        name: !name ? "Name is required" : null,
+        country: !country ? "Country is required" : null,
+        categoryId: !categoryId ? "Category ID is required" : null,
+      });
     }
 
     // Check if category exists
@@ -239,10 +234,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!category) {
-      return NextResponse.json(
-        { success: false, error: "Category not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Category");
     }
 
     // Generate slug from name
@@ -305,19 +297,13 @@ export async function POST(request: NextRequest) {
 
     logger.info("Place created successfully", { placeId: place.id });
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Place created successfully",
-        data: place,
-      },
-      { status: 201 }
-    );
+    return sendSuccess(place, "Place created successfully", 201);
   } catch (error) {
     logger.error("Failed to create place", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to create place" },
-      { status: 500 }
+    return sendError(
+      "Failed to create place",
+      ERROR_CODES.PLACE_CREATE_ERROR,
+      500
     );
   }
 }

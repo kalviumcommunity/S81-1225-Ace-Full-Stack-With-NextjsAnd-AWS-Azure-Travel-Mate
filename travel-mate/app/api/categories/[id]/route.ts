@@ -10,9 +10,16 @@
  * - DELETE /api/categories/[id]  - Delete a category
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import {
+  sendSuccess,
+  sendNotFound,
+  sendBadRequest,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -61,23 +68,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!category) {
-      return NextResponse.json(
-        { success: false, error: "Category not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Category not found", ERROR_CODES.CATEGORY_NOT_FOUND);
     }
 
     logger.info("Category fetched successfully", { categoryId: id });
 
-    return NextResponse.json({
-      success: true,
-      data: category,
-    });
+    return sendSuccess(category, "Category fetched successfully");
   } catch (error) {
     logger.error("Failed to fetch category", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch category" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch category",
+      ERROR_CODES.CATEGORY_FETCH_ERROR,
+      500
     );
   }
 }
@@ -96,10 +98,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingCategory) {
-      return NextResponse.json(
-        { success: false, error: "Category not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Category not found", ERROR_CODES.CATEGORY_NOT_FOUND);
     }
 
     // Extract updatable fields
@@ -114,9 +113,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No fields to update" },
-        { status: 400 }
+      return sendBadRequest(
+        "No fields to update",
+        ERROR_CODES.VALIDATION_ERROR
       );
     }
 
@@ -138,16 +137,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Category updated successfully", { categoryId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Category updated successfully",
-      data: category,
-    });
+    return sendSuccess(category, "Category updated successfully");
   } catch (error) {
     logger.error("Failed to update category", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to update category" },
-      { status: 500 }
+    return sendError(
+      "Failed to update category",
+      ERROR_CODES.CATEGORY_UPDATE_ERROR,
+      500
     );
   }
 }
@@ -170,21 +166,15 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingCategory) {
-      return NextResponse.json(
-        { success: false, error: "Category not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Category not found", ERROR_CODES.CATEGORY_NOT_FOUND);
     }
 
     // Check if category has places
     if (existingCategory._count.places > 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Cannot delete category with associated places",
-          details: { placeCount: existingCategory._count.places },
-        },
-        { status: 400 }
+      return sendBadRequest(
+        "Cannot delete category with associated places",
+        ERROR_CODES.CATEGORY_HAS_PLACES,
+        { placeCount: existingCategory._count.places }
       );
     }
 
@@ -196,15 +186,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Category deleted successfully", { categoryId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Category deleted successfully",
-    });
+    return sendSuccess(null, "Category deleted successfully");
   } catch (error) {
     logger.error("Failed to delete category", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to delete category" },
-      { status: 500 }
+    return sendError(
+      "Failed to delete category",
+      ERROR_CODES.CATEGORY_DELETE_ERROR,
+      500
     );
   }
 }

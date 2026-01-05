@@ -9,10 +9,18 @@
  * - POST /api/trips       - Create a new trip
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { Prisma } from "@prisma/client";
+import {
+  sendPaginatedSuccess,
+  sendSuccess,
+  sendValidationError,
+  sendNotFound,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 // ============================================
 // GET /api/trips - List trips with pagination
@@ -137,10 +145,9 @@ export async function GET(request: NextRequest) {
 
     logger.info("Trips fetched successfully", { page, limit, total });
 
-    return NextResponse.json({
-      success: true,
-      data: trips,
-      pagination: {
+    return sendPaginatedSuccess(
+      trips,
+      {
         page,
         limit,
         total,
@@ -148,7 +155,8 @@ export async function GET(request: NextRequest) {
         hasNextPage,
         hasPrevPage,
       },
-      filters: {
+      "Trips fetched successfully",
+      {
         userId,
         status,
         isPublic:
@@ -158,13 +166,14 @@ export async function GET(request: NextRequest) {
         startDateTo,
         sortBy: orderByField,
         sortOrder,
-      },
-    });
+      }
+    );
   } catch (error) {
     logger.error("Failed to fetch trips", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch trips" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch trips",
+      ERROR_CODES.TRIP_FETCH_ERROR,
+      500
     );
   }
 }
@@ -191,17 +200,10 @@ export async function POST(request: NextRequest) {
     } = body;
 
     if (!name || !userId) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Validation failed",
-          details: {
-            name: !name ? "Name is required" : null,
-            userId: !userId ? "User ID is required" : null,
-          },
-        },
-        { status: 400 }
-      );
+      return sendValidationError({
+        name: !name ? "Name is required" : null,
+        userId: !userId ? "User ID is required" : null,
+      });
     }
 
     // Check if user exists
@@ -210,10 +212,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return sendNotFound("User not found", ERROR_CODES.USER_NOT_FOUND);
     }
 
     // Create trip
@@ -255,19 +254,13 @@ export async function POST(request: NextRequest) {
 
     logger.info("Trip created successfully", { tripId: trip.id });
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Trip created successfully",
-        data: trip,
-      },
-      { status: 201 }
-    );
+    return sendSuccess(trip, "Trip created successfully", 201);
   } catch (error) {
     logger.error("Failed to create trip", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to create trip" },
-      { status: 500 }
+    return sendError(
+      "Failed to create trip",
+      ERROR_CODES.TRIP_CREATE_ERROR,
+      500
     );
   }
 }

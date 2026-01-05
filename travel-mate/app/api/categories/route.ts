@@ -9,10 +9,18 @@
  * - POST /api/categories       - Create a new category
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { Prisma } from "@prisma/client";
+import {
+  sendPaginatedSuccess,
+  sendSuccess,
+  sendValidationError,
+  sendConflict,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 // ============================================
 // GET /api/categories - List categories with pagination
@@ -95,10 +103,9 @@ export async function GET(request: NextRequest) {
 
     logger.info("Categories fetched successfully", { page, limit, total });
 
-    return NextResponse.json({
-      success: true,
-      data: categories,
-      pagination: {
+    return sendPaginatedSuccess(
+      categories,
+      {
         page,
         limit,
         total,
@@ -106,19 +113,21 @@ export async function GET(request: NextRequest) {
         hasNextPage,
         hasPrevPage,
       },
-      filters: {
+      "Categories fetched successfully",
+      {
         isActive:
           isActive === "true" ? true : isActive === "false" ? false : null,
         search,
         sortBy: orderByField,
         sortOrder,
-      },
-    });
+      }
+    );
   } catch (error) {
     logger.error("Failed to fetch categories", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch categories" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch categories",
+      ERROR_CODES.CATEGORY_FETCH_ERROR,
+      500
     );
   }
 }
@@ -134,16 +143,9 @@ export async function POST(request: NextRequest) {
     const { name, description, iconUrl, sortOrder } = body;
 
     if (!name) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Validation failed",
-          details: {
-            name: "Name is required",
-          },
-        },
-        { status: 400 }
-      );
+      return sendValidationError({
+        name: "Name is required",
+      });
     }
 
     // Generate slug from name
@@ -166,9 +168,9 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingCategory) {
-      return NextResponse.json(
-        { success: false, error: "Category with this name already exists" },
-        { status: 409 }
+      return sendConflict(
+        "Category with this name already exists",
+        ERROR_CODES.CATEGORY_DUPLICATE
       );
     }
 
@@ -196,29 +198,23 @@ export async function POST(request: NextRequest) {
 
     logger.info("Category created successfully", { categoryId: category.id });
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Category created successfully",
-        data: category,
-      },
-      { status: 201 }
-    );
+    return sendSuccess(category, "Category created successfully", 201);
   } catch (error) {
     logger.error("Failed to create category", { error });
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === "P2002") {
-        return NextResponse.json(
-          { success: false, error: "Category with this name already exists" },
-          { status: 409 }
+        return sendConflict(
+          "Category with this name already exists",
+          ERROR_CODES.CATEGORY_DUPLICATE
         );
       }
     }
 
-    return NextResponse.json(
-      { success: false, error: "Failed to create category" },
-      { status: 500 }
+    return sendError(
+      "Failed to create category",
+      ERROR_CODES.CATEGORY_CREATE_ERROR,
+      500
     );
   }
 }

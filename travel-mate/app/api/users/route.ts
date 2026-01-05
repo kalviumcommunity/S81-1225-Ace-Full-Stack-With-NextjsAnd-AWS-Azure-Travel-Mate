@@ -9,10 +9,19 @@
  * - POST /api/users       - Create a new user
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 import { Prisma } from "@prisma/client";
+import {
+  sendPaginatedSuccess,
+  sendSuccess,
+  sendValidationError,
+  sendBadRequest,
+  sendConflict,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 // ============================================
 // GET /api/users - List users with pagination
@@ -107,31 +116,25 @@ export async function GET(request: NextRequest) {
 
     logger.info("Users fetched successfully", { page, limit, total });
 
-    return NextResponse.json({
-      success: true,
-      data: users,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasNextPage,
-        hasPrevPage,
-      },
-      filters: {
+    return sendPaginatedSuccess(
+      users,
+      { page, limit, total, totalPages, hasNextPage, hasPrevPage },
+      "Users fetched successfully",
+      {
         role,
         isActive:
           isActive === "true" ? true : isActive === "false" ? false : null,
         search,
         sortBy: orderByField,
         sortOrder,
-      },
-    });
+      }
+    );
   } catch (error) {
     logger.error("Failed to fetch users", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch users" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch users",
+      ERROR_CODES.USER_FETCH_ERROR,
+      500
     );
   }
 }
@@ -147,26 +150,16 @@ export async function POST(request: NextRequest) {
     const { email, name, role, bio, phoneNumber, avatarUrl } = body;
 
     if (!email || !name) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Validation failed",
-          details: {
-            email: !email ? "Email is required" : null,
-            name: !name ? "Name is required" : null,
-          },
-        },
-        { status: 400 }
-      );
+      return sendValidationError({
+        email: !email ? "Email is required" : null,
+        name: !name ? "Name is required" : null,
+      });
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { success: false, error: "Invalid email format" },
-        { status: 400 }
-      );
+      return sendBadRequest("Invalid email format");
     }
 
     // Check if user with email already exists
@@ -175,10 +168,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
-      return NextResponse.json(
-        { success: false, error: "User with this email already exists" },
-        { status: 409 }
-      );
+      return sendConflict("User with this email already exists");
     }
 
     // Create user
@@ -208,29 +198,20 @@ export async function POST(request: NextRequest) {
 
     logger.info("User created successfully", { userId: user.id });
 
-    return NextResponse.json(
-      {
-        success: true,
-        message: "User created successfully",
-        data: user,
-      },
-      { status: 201 }
-    );
+    return sendSuccess(user, "User created successfully", 201);
   } catch (error) {
     logger.error("Failed to create user", { error });
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
       if (error.code === "P2002") {
-        return NextResponse.json(
-          { success: false, error: "User with this email already exists" },
-          { status: 409 }
-        );
+        return sendConflict("User with this email already exists");
       }
     }
 
-    return NextResponse.json(
-      { success: false, error: "Failed to create user" },
-      { status: 500 }
+    return sendError(
+      "Failed to create user",
+      ERROR_CODES.USER_CREATE_ERROR,
+      500
     );
   }
 }

@@ -10,9 +10,16 @@
  * - DELETE /api/users/[id]  - Delete a user
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import {
+  sendSuccess,
+  sendNotFound,
+  sendBadRequest,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -80,24 +87,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!user) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return sendNotFound("User");
     }
 
     logger.info("User fetched successfully", { userId: id });
 
-    return NextResponse.json({
-      success: true,
-      data: user,
-    });
+    return sendSuccess(user, "User fetched successfully");
   } catch (error) {
     logger.error("Failed to fetch user", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch user" },
-      { status: 500 }
-    );
+    return sendError("Failed to fetch user", ERROR_CODES.USER_FETCH_ERROR, 500);
   }
 }
 
@@ -115,10 +113,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingUser) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return sendNotFound("User");
     }
 
     // Extract updatable fields
@@ -136,10 +131,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (emailVerified !== undefined) updateData.emailVerified = emailVerified;
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No fields to update" },
-        { status: 400 }
-      );
+      return sendBadRequest("No fields to update");
     }
 
     const user = await prisma.user.update({
@@ -162,16 +154,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     logger.info("User updated successfully", { userId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "User updated successfully",
-      data: user,
-    });
+    return sendSuccess(user, "User updated successfully");
   } catch (error) {
     logger.error("Failed to update user", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to update user" },
-      { status: 500 }
+    return sendError(
+      "Failed to update user",
+      ERROR_CODES.USER_UPDATE_ERROR,
+      500
     );
   }
 }
@@ -189,10 +178,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingUser) {
-      return NextResponse.json(
-        { success: false, error: "User not found" },
-        { status: 404 }
-      );
+      return sendNotFound("User");
     }
 
     // Soft delete by setting isActive to false
@@ -204,15 +190,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     logger.info("User deleted successfully", { userId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "User deleted successfully",
-    });
+    return sendSuccess(null, "User deleted successfully");
   } catch (error) {
     logger.error("Failed to delete user", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to delete user" },
-      { status: 500 }
+    return sendError(
+      "Failed to delete user",
+      ERROR_CODES.USER_DELETE_ERROR,
+      500
     );
   }
 }

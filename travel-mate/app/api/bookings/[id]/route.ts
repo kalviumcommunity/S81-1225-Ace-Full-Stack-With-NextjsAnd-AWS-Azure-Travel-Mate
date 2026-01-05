@@ -10,9 +10,16 @@
  * - DELETE /api/bookings/[id]  - Cancel a booking
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import {
+  sendSuccess,
+  sendNotFound,
+  sendBadRequest,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -84,23 +91,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!booking) {
-      return NextResponse.json(
-        { success: false, error: "Booking not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Booking not found", ERROR_CODES.BOOKING_NOT_FOUND);
     }
 
     logger.info("Booking fetched successfully", { bookingId: id });
 
-    return NextResponse.json({
-      success: true,
-      data: booking,
-    });
+    return sendSuccess(booking, "Booking fetched successfully");
   } catch (error) {
     logger.error("Failed to fetch booking", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch booking" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch booking",
+      ERROR_CODES.BOOKING_FETCH_ERROR,
+      500
     );
   }
 }
@@ -119,10 +121,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingBooking) {
-      return NextResponse.json(
-        { success: false, error: "Booking not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Booking not found", ERROR_CODES.BOOKING_NOT_FOUND);
     }
 
     // Extract updatable fields
@@ -153,9 +152,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       updateData.specialRequests = specialRequests;
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No fields to update" },
-        { status: 400 }
+      return sendBadRequest(
+        "No fields to update",
+        ERROR_CODES.VALIDATION_ERROR
       );
     }
 
@@ -165,12 +164,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         new Date(updateData.checkOut as string) <=
         new Date(updateData.checkIn as string)
       ) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: "Check-out date must be after check-in date",
-          },
-          { status: 400 }
+        return sendBadRequest(
+          "Check-out date must be after check-in date",
+          ERROR_CODES.BOOKING_INVALID_DATES
         );
       }
     }
@@ -210,16 +206,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Booking updated successfully", { bookingId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Booking updated successfully",
-      data: booking,
-    });
+    return sendSuccess(booking, "Booking updated successfully");
   } catch (error) {
     logger.error("Failed to update booking", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to update booking" },
-      { status: 500 }
+    return sendError(
+      "Failed to update booking",
+      ERROR_CODES.BOOKING_UPDATE_ERROR,
+      500
     );
   }
 }
@@ -237,24 +230,21 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingBooking) {
-      return NextResponse.json(
-        { success: false, error: "Booking not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Booking not found", ERROR_CODES.BOOKING_NOT_FOUND);
     }
 
     // Check if booking can be cancelled
     if (existingBooking.status === "COMPLETED") {
-      return NextResponse.json(
-        { success: false, error: "Cannot cancel a completed booking" },
-        { status: 400 }
+      return sendBadRequest(
+        "Cannot cancel a completed booking",
+        ERROR_CODES.BOOKING_ALREADY_COMPLETED
       );
     }
 
     if (existingBooking.status === "CANCELLED") {
-      return NextResponse.json(
-        { success: false, error: "Booking is already cancelled" },
-        { status: 400 }
+      return sendBadRequest(
+        "Booking is already cancelled",
+        ERROR_CODES.BOOKING_ALREADY_CANCELLED
       );
     }
 
@@ -266,15 +256,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Booking cancelled successfully", { bookingId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Booking cancelled successfully",
-    });
+    return sendSuccess(null, "Booking cancelled successfully");
   } catch (error) {
     logger.error("Failed to cancel booking", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to cancel booking" },
-      { status: 500 }
+    return sendError(
+      "Failed to cancel booking",
+      ERROR_CODES.BOOKING_DELETE_ERROR,
+      500
     );
   }
 }

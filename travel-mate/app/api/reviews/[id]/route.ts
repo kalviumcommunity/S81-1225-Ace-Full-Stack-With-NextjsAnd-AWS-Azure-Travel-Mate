@@ -10,9 +10,16 @@
  * - DELETE /api/reviews/[id]  - Delete a review
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import {
+  sendSuccess,
+  sendNotFound,
+  sendBadRequest,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -64,23 +71,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!review) {
-      return NextResponse.json(
-        { success: false, error: "Review not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Review not found", ERROR_CODES.REVIEW_NOT_FOUND);
     }
 
     logger.info("Review fetched successfully", { reviewId: id });
 
-    return NextResponse.json({
-      success: true,
-      data: review,
-    });
+    return sendSuccess(review, "Review fetched successfully");
   } catch (error) {
     logger.error("Failed to fetch review", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch review" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch review",
+      ERROR_CODES.REVIEW_FETCH_ERROR,
+      500
     );
   }
 }
@@ -99,10 +101,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingReview) {
-      return NextResponse.json(
-        { success: false, error: "Review not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Review not found", ERROR_CODES.REVIEW_NOT_FOUND);
     }
 
     // Extract updatable fields
@@ -112,9 +111,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     const updateData: Record<string, unknown> = {};
     if (rating !== undefined) {
       if (rating < 1 || rating > 5) {
-        return NextResponse.json(
-          { success: false, error: "Rating must be between 1 and 5" },
-          { status: 400 }
+        return sendBadRequest(
+          "Rating must be between 1 and 5",
+          ERROR_CODES.REVIEW_INVALID_RATING
         );
       }
       updateData.rating = Number(rating);
@@ -126,9 +125,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       updateData.visitDate = visitDate ? new Date(visitDate) : null;
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No fields to update" },
-        { status: 400 }
+      return sendBadRequest(
+        "No fields to update",
+        ERROR_CODES.VALIDATION_ERROR
       );
     }
 
@@ -163,16 +162,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Review updated successfully", { reviewId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Review updated successfully",
-      data: review,
-    });
+    return sendSuccess(review, "Review updated successfully");
   } catch (error) {
     logger.error("Failed to update review", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to update review" },
-      { status: 500 }
+    return sendError(
+      "Failed to update review",
+      ERROR_CODES.REVIEW_UPDATE_ERROR,
+      500
     );
   }
 }
@@ -190,10 +186,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingReview) {
-      return NextResponse.json(
-        { success: false, error: "Review not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Review not found", ERROR_CODES.REVIEW_NOT_FOUND);
     }
 
     // Hard delete the review
@@ -203,15 +196,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Review deleted successfully", { reviewId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Review deleted successfully",
-    });
+    return sendSuccess(null, "Review deleted successfully");
   } catch (error) {
     logger.error("Failed to delete review", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to delete review" },
-      { status: 500 }
+    return sendError(
+      "Failed to delete review",
+      ERROR_CODES.REVIEW_DELETE_ERROR,
+      500
     );
   }
 }

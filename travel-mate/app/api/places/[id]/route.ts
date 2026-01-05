@@ -10,9 +10,16 @@
  * - DELETE /api/places/[id]  - Delete a place
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import {
+  sendSuccess,
+  sendNotFound,
+  sendBadRequest,
+  sendError,
+} from "@/lib/responseHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -103,23 +110,18 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!place) {
-      return NextResponse.json(
-        { success: false, error: "Place not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Place");
     }
 
     logger.info("Place fetched successfully", { placeId: id });
 
-    return NextResponse.json({
-      success: true,
-      data: place,
-    });
+    return sendSuccess(place, "Place fetched successfully");
   } catch (error) {
     logger.error("Failed to fetch place", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch place" },
-      { status: 500 }
+    return sendError(
+      "Failed to fetch place",
+      ERROR_CODES.PLACE_FETCH_ERROR,
+      500
     );
   }
 }
@@ -138,10 +140,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingPlace) {
-      return NextResponse.json(
-        { success: false, error: "Place not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Place");
     }
 
     // Extract updatable fields
@@ -179,10 +178,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (isActive !== undefined) updateData.isActive = isActive;
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No fields to update" },
-        { status: 400 }
-      );
+      return sendBadRequest("No fields to update");
     }
 
     // If categoryId is being updated, verify it exists
@@ -191,10 +187,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         where: { id: categoryId },
       });
       if (!category) {
-        return NextResponse.json(
-          { success: false, error: "Category not found" },
-          { status: 404 }
-        );
+        return sendNotFound("Category");
       }
     }
 
@@ -231,16 +224,13 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Place updated successfully", { placeId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Place updated successfully",
-      data: place,
-    });
+    return sendSuccess(place, "Place updated successfully");
   } catch (error) {
     logger.error("Failed to update place", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to update place" },
-      { status: 500 }
+    return sendError(
+      "Failed to update place",
+      ERROR_CODES.PLACE_UPDATE_ERROR,
+      500
     );
   }
 }
@@ -258,10 +248,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
 
     if (!existingPlace) {
-      return NextResponse.json(
-        { success: false, error: "Place not found" },
-        { status: 404 }
-      );
+      return sendNotFound("Place");
     }
 
     // Soft delete by setting isActive to false
@@ -272,15 +259,13 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Place deleted successfully", { placeId: id });
 
-    return NextResponse.json({
-      success: true,
-      message: "Place deleted successfully",
-    });
+    return sendSuccess(null, "Place deleted successfully");
   } catch (error) {
     logger.error("Failed to delete place", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to delete place" },
-      { status: 500 }
+    return sendError(
+      "Failed to delete place",
+      ERROR_CODES.PLACE_DELETE_ERROR,
+      500
     );
   }
 }
