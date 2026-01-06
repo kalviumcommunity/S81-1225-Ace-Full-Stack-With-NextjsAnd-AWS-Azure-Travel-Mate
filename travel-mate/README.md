@@ -4,6 +4,252 @@ A full-stack travel destination application built with Next.js, TypeScript, Post
 
 ---
 
+## 🔐 Input Validation with Zod
+
+This application uses **Zod**, a TypeScript-first schema validation library, to validate all incoming API requests. Zod ensures that POST and PUT requests receive valid, well-structured data—preventing bad inputs from corrupting the database or crashing the API.
+
+### Why Zod?
+
+- **TypeScript-first**: Schemas automatically infer TypeScript types
+- **Declarative**: Define what valid data looks like, not how to validate it
+- **Descriptive errors**: Detailed error messages for debugging
+- **Reusable**: Share schemas between client and server
+- **Composable**: Combine and extend schemas easily
+
+### Schema Structure
+
+All schemas are located in `/lib/schemas/`:
+
+```
+lib/schemas/
+├── index.ts           # Central exports
+├── user.schema.ts     # User validation schemas
+├── place.schema.ts    # Place validation schemas
+├── booking.schema.ts  # Booking validation schemas
+├── trip.schema.ts     # Trip validation schemas
+├── review.schema.ts   # Review validation schemas
+└── category.schema.ts # Category validation schemas
+```
+
+### Schema Definitions
+
+#### User Schema
+
+```typescript
+// lib/schemas/user.schema.ts
+import { z } from "zod";
+
+export const createUserSchema = z.object({
+  email: z.string().email("Invalid email address").max(255),
+  name: z.string().min(2, "Name must be at least 2 characters").max(255),
+  role: z.enum(["USER", "ADMIN", "MODERATOR"]).optional().default("USER"),
+  bio: z.string().max(1000).optional().nullable(),
+  phoneNumber: z.string()
+    .max(20)
+    .regex(/^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]*$/, "Invalid phone number")
+    .optional().nullable(),
+  avatarUrl: z.string().url("Invalid avatar URL").optional().nullable(),
+});
+
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+```
+
+#### Booking Schema (with Date Validation)
+
+```typescript
+// lib/schemas/booking.schema.ts
+export const createBookingSchema = z.object({
+  userId: z.string().uuid("Invalid user ID format"),
+  placeId: z.string().uuid("Invalid place ID format"),
+  checkIn: z.string().datetime("Invalid check-in date format"),
+  checkOut: z.string().datetime("Invalid check-out date format"),
+  guestCount: z.number().int().min(1).max(100).optional().default(1),
+  totalAmount: z.number().positive().max(1000000),
+  currency: z.string().length(3).toUpperCase().optional().default("USD"),
+  specialRequests: z.string().max(2000).optional().nullable(),
+}).refine(
+  (data) => new Date(data.checkOut) > new Date(data.checkIn),
+  { message: "Check-out date must be after check-in date", path: ["checkOut"] }
+);
+```
+
+#### Review Schema (with Rating Range)
+
+```typescript
+// lib/schemas/review.schema.ts
+export const createReviewSchema = z.object({
+  userId: z.string().uuid("Invalid user ID format"),
+  placeId: z.string().uuid("Invalid place ID format"),
+  rating: z.number().int().min(1, "Rating must be between 1 and 5").max(5),
+  title: z.string().min(3).max(255).optional().nullable(),
+  comment: z.string().min(10).max(5000).optional().nullable(),
+  visitDate: z.string().datetime().optional().nullable(),
+});
+```
+
+### Using Validation in API Routes
+
+The validation is integrated using the `validateRequest` helper:
+
+```typescript
+// app/api/users/route.ts
+import { validateRequest } from "@/lib/responseHandler";
+import { createUserSchema } from "@/lib/schemas";
+
+export async function POST(request: NextRequest) {
+  // Validate request body with Zod schema
+  const validation = await validateRequest(request, createUserSchema);
+  if (!validation.success) {
+    return validation.error;
+  }
+
+  // Access validated and typed data
+  const { email, name, role } = validation.data;
+  // ... proceed with database operations
+}
+```
+
+### Validation Error Responses
+
+When validation fails, the API returns a structured error response:
+
+```json
+{
+  "success": false,
+  "message": "Validation Error",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "details": [
+      { "field": "name", "message": "Name must be at least 2 characters long" },
+      { "field": "email", "message": "Invalid email address" }
+    ]
+  },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+### Testing Validation
+
+#### ✅ Valid Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Alice Smith","email":"alice@example.com"}'
+```
+
+**Response (201 Created):**
+```json
+{
+  "success": true,
+  "message": "User created successfully",
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "name": "Alice Smith",
+    "email": "alice@example.com",
+    "role": "USER"
+  },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+#### ❌ Invalid Request Example
+
+```bash
+curl -X POST http://localhost:3000/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"A","email":"invalid-email"}'
+```
+
+**Response (400 Bad Request):**
+```json
+{
+  "success": false,
+  "message": "Validation Error",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "details": [
+      { "field": "name", "message": "Name must be at least 2 characters long" },
+      { "field": "email", "message": "Invalid email address" }
+    ]
+  },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+#### ❌ Booking Date Validation Example
+
+```bash
+curl -X POST http://localhost:3000/api/bookings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "userId": "550e8400-e29b-41d4-a716-446655440000",
+    "placeId": "660e8400-e29b-41d4-a716-446655440001",
+    "checkIn": "2026-01-15T14:00:00.000Z",
+    "checkOut": "2026-01-14T10:00:00.000Z",
+    "totalAmount": 500
+  }'
+```
+
+**Response (400 Bad Request):**
+```json
+{
+  "success": false,
+  "message": "Validation Error",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "details": [
+      { "field": "checkOut", "message": "Check-out date must be after check-in date" }
+    ]
+  },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+### Schema Reuse Between Client and Server
+
+A major benefit of Zod is sharing validation logic between frontend and backend:
+
+```typescript
+// Shared schema file: lib/schemas/user.schema.ts
+import { z } from "zod";
+
+export const createUserSchema = z.object({
+  name: z.string().min(2),
+  email: z.string().email(),
+});
+
+// Infer TypeScript type from schema
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+
+// Use in API route (server)
+const validation = await validateRequest(request, createUserSchema);
+
+// Use in React form (client)
+const handleSubmit = (data: unknown) => {
+  const result = createUserSchema.safeParse(data);
+  if (!result.success) {
+    // Display validation errors
+    console.log(result.error.format());
+  }
+};
+```
+
+### Reflection on Validation Consistency
+
+**Why Schema Consistency Matters in Team Projects:**
+
+1. **Single Source of Truth**: One schema definition ensures frontend and backend agree on data structure
+2. **Type Safety**: TypeScript types are automatically derived from schemas, eliminating drift
+3. **DRY Principle**: No duplicate validation logic across codebase
+4. **Better DX**: Developers get autocomplete and type checking based on schemas
+5. **Easier Maintenance**: Update schema once, changes propagate everywhere
+6. **Testing**: Same validation rules apply in unit tests, integration tests, and production
+
+**Pro Tip:** Zod turns "guessing" into "guaranteeing." By validating every input upfront, your app stops breaking silently — and starts communicating clearly.
+
+---
+
 ## 🌐 RESTful API Route Structure
 
 This section documents the RESTful API architecture implemented using Next.js file-based routing under the `/api/` directory.

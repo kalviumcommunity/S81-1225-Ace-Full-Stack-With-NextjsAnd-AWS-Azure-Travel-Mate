@@ -16,11 +16,12 @@ import { Prisma } from "@prisma/client";
 import {
   sendPaginatedSuccess,
   sendSuccess,
-  sendValidationError,
   sendConflict,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { createCategorySchema } from "@/lib/schemas";
 
 // ============================================
 // GET /api/categories - List categories with pagination
@@ -137,16 +138,13 @@ export async function GET(request: NextRequest) {
 // ============================================
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-
-    // Validate required fields
-    const { name, description, iconUrl, sortOrder } = body;
-
-    if (!name) {
-      return sendValidationError({
-        name: "Name is required",
-      });
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, createCategorySchema);
+    if (!validation.success) {
+      return validation.error;
     }
+
+    const { name, description, iconUrl, sortOrder } = validation.data;
 
     // Generate slug from name
     const baseSlug = name

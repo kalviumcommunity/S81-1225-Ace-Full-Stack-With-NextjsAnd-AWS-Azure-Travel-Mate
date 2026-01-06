@@ -18,8 +18,10 @@ import {
   sendNotFound,
   sendBadRequest,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { updateBookingSchema } from "@/lib/schemas";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -113,7 +115,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
-    const body = await request.json();
+
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, updateBookingSchema);
+    if (!validation.success) {
+      return validation.error;
+    }
 
     // Check if booking exists
     const existingBooking = await prisma.booking.findUnique({
@@ -124,7 +131,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return sendNotFound("Booking not found", ERROR_CODES.BOOKING_NOT_FOUND);
     }
 
-    // Extract updatable fields
     const {
       checkIn,
       checkOut,
@@ -134,7 +140,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       status,
       paymentStatus,
       specialRequests,
-    } = body;
+    } = validation.data;
 
     // Build update data
     const updateData: Record<string, unknown> = {};
@@ -150,26 +156,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (paymentStatus !== undefined) updateData.paymentStatus = paymentStatus;
     if (specialRequests !== undefined)
       updateData.specialRequests = specialRequests;
-
-    if (Object.keys(updateData).length === 0) {
-      return sendBadRequest(
-        "No fields to update",
-        ERROR_CODES.VALIDATION_ERROR
-      );
-    }
-
-    // Validate dates if being updated
-    if (updateData.checkIn && updateData.checkOut) {
-      if (
-        new Date(updateData.checkOut as string) <=
-        new Date(updateData.checkIn as string)
-      ) {
-        return sendBadRequest(
-          "Check-out date must be after check-in date",
-          ERROR_CODES.BOOKING_INVALID_DATES
-        );
-      }
-    }
 
     const booking = await prisma.booking.update({
       where: { id },

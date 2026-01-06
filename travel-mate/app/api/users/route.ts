@@ -16,12 +16,12 @@ import { Prisma } from "@prisma/client";
 import {
   sendPaginatedSuccess,
   sendSuccess,
-  sendValidationError,
-  sendBadRequest,
   sendConflict,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { createUserSchema } from "@/lib/schemas";
 
 // ============================================
 // GET /api/users - List users with pagination
@@ -144,23 +144,13 @@ export async function GET(request: NextRequest) {
 // ============================================
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-
-    // Validate required fields
-    const { email, name, role, bio, phoneNumber, avatarUrl } = body;
-
-    if (!email || !name) {
-      return sendValidationError({
-        email: !email ? "Email is required" : null,
-        name: !name ? "Name is required" : null,
-      });
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, createUserSchema);
+    if (!validation.success) {
+      return validation.error;
     }
 
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return sendBadRequest("Invalid email format");
-    }
+    const { email, name, role, bio, phoneNumber, avatarUrl } = validation.data;
 
     // Check if user with email already exists
     const existingUser = await prisma.user.findUnique({

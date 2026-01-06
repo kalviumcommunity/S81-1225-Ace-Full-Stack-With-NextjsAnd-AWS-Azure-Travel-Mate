@@ -16,10 +16,11 @@ import { logger } from "@/lib/logger";
 import {
   sendSuccess,
   sendNotFound,
-  sendBadRequest,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { updatePlaceSchema } from "@/lib/schemas";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -132,7 +133,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
-    const body = await request.json();
+
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, updatePlaceSchema);
+    if (!validation.success) {
+      return validation.error;
+    }
 
     // Check if place exists
     const existingPlace = await prisma.place.findUnique({
@@ -143,7 +149,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return sendNotFound("Place");
     }
 
-    // Extract updatable fields
     const {
       name,
       description,
@@ -157,7 +162,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       priceLevel,
       isFeatured,
       isActive,
-    } = body;
+    } = validation.data;
 
     // Build update data
     const updateData: Record<string, unknown> = {};
@@ -176,10 +181,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       updateData.priceLevel = priceLevel ? Number(priceLevel) : null;
     if (isFeatured !== undefined) updateData.isFeatured = isFeatured;
     if (isActive !== undefined) updateData.isActive = isActive;
-
-    if (Object.keys(updateData).length === 0) {
-      return sendBadRequest("No fields to update");
-    }
 
     // If categoryId is being updated, verify it exists
     if (categoryId) {

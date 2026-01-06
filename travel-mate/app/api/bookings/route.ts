@@ -16,12 +16,12 @@ import { Prisma } from "@prisma/client";
 import {
   sendPaginatedSuccess,
   sendSuccess,
-  sendValidationError,
   sendNotFound,
-  sendBadRequest,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { createBookingSchema } from "@/lib/schemas";
 
 // ============================================
 // GET /api/bookings - List bookings with pagination
@@ -196,9 +196,12 @@ export async function GET(request: NextRequest) {
 // ============================================
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, createBookingSchema);
+    if (!validation.success) {
+      return validation.error;
+    }
 
-    // Validate required fields
     const {
       userId,
       placeId,
@@ -208,28 +211,7 @@ export async function POST(request: NextRequest) {
       totalAmount,
       currency,
       specialRequests,
-    } = body;
-
-    if (!userId || !placeId || !checkIn || !checkOut || !totalAmount) {
-      return sendValidationError({
-        userId: !userId ? "User ID is required" : null,
-        placeId: !placeId ? "Place ID is required" : null,
-        checkIn: !checkIn ? "Check-in date is required" : null,
-        checkOut: !checkOut ? "Check-out date is required" : null,
-        totalAmount: !totalAmount ? "Total amount is required" : null,
-      });
-    }
-
-    // Validate dates
-    const checkInDate = new Date(checkIn);
-    const checkOutDate = new Date(checkOut);
-
-    if (checkOutDate <= checkInDate) {
-      return sendBadRequest(
-        "Check-out date must be after check-in date",
-        ERROR_CODES.BOOKING_INVALID_DATES
-      );
-    }
+    } = validation.data;
 
     // Check if user exists
     const user = await prisma.user.findUnique({
@@ -258,8 +240,8 @@ export async function POST(request: NextRequest) {
         bookingRef,
         userId,
         placeId,
-        checkIn: checkInDate,
-        checkOut: checkOutDate,
+        checkIn: new Date(checkIn),
+        checkOut: new Date(checkOut),
         guestCount: guestCount || 1,
         totalAmount: Number(totalAmount),
         currency: currency || "USD",
