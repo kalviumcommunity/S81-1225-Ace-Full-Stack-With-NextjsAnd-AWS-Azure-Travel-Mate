@@ -11,3 +11,4 @@ export * from "./booking.schema";
 export * from "./trip.schema";
 export * from "./review.schema";
 export * from "./category.schema";
+export * from "./auth.schema";
