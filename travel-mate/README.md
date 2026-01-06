@@ -250,6 +250,371 @@ const handleSubmit = (data: unknown) => {
 
 ---
 
+## 🔑 Authentication APIs (Signup / Login)
+
+This application implements secure user authentication using **bcrypt** for password hashing and **JWT (JSON Web Token)** for session management.
+
+### Authentication Flow
+
+```
+┌─────────────┐    1. Signup     ┌─────────────┐
+│   Client    │ ───────────────► │   Server    │
+│             │                  │             │
+│             │ ◄─────────────── │  (bcrypt    │
+│             │   JWT Tokens     │   hashing)  │
+└─────────────┘                  └─────────────┘
+
+┌─────────────┐    2. Login      ┌─────────────┐
+│   Client    │ ───────────────► │   Server    │
+│  (email +   │                  │ (verify pwd │
+│  password)  │ ◄─────────────── │  with bcrypt│
+│             │   JWT Tokens     │  + issue JWT│
+└─────────────┘                  └─────────────┘
+
+┌─────────────┐ 3. Protected API ┌─────────────┐
+│   Client    │ ───────────────► │   Server    │
+│ (Bearer     │                  │ (verify JWT │
+│  token)     │ ◄─────────────── │  signature) │
+│             │   Protected Data │             │
+└─────────────┘                  └─────────────┘
+```
+
+### API Endpoints
+
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|---------------|
+| `/api/auth/signup` | POST | Create new user account | No |
+| `/api/auth/login` | POST | Authenticate and get tokens | No |
+| `/api/auth/refresh` | POST | Refresh access token | No (needs refresh token) |
+| `/api/auth/me` | GET | Get current user profile | Yes |
+
+### Auth API Directory Structure
+
+```
+app/api/auth/
+├── signup/
+│   └── route.ts    # POST - User registration
+├── login/
+│   └── route.ts    # POST - User authentication
+├── refresh/
+│   └── route.ts    # POST - Token refresh
+└── me/
+    └── route.ts    # GET - Current user profile
+```
+
+### Signup API
+
+**POST** `/api/auth/signup`
+
+Creates a new user account with securely hashed password.
+
+**Request Body:**
+```json
+{
+  "name": "Alice Johnson",
+  "email": "alice@example.com",
+  "password": "SecurePass123!",
+  "confirmPassword": "SecurePass123!"
+}
+```
+
+**Password Requirements:**
+- Minimum 8 characters
+- At least one uppercase letter
+- At least one lowercase letter
+- At least one number
+- At least one special character
+
+**Success Response (201):**
+```json
+{
+  "success": true,
+  "message": "Account created successfully",
+  "data": {
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "alice@example.com",
+      "name": "Alice Johnson",
+      "role": "USER",
+      "isActive": true,
+      "emailVerified": false,
+      "createdAt": "2026-01-06T12:00:00.000Z"
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expiresIn": "1h"
+  },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+**Error Response - Email Already Exists (409):**
+```json
+{
+  "success": false,
+  "message": "An account with this email already exists",
+  "error": {
+    "code": "CONFLICT",
+    "details": {
+      "field": "email",
+      "suggestion": "Please use a different email or try logging in"
+    }
+  },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+### Login API
+
+**POST** `/api/auth/login`
+
+Authenticates a user and returns JWT tokens.
+
+**Request Body:**
+```json
+{
+  "email": "alice@example.com",
+  "password": "SecurePass123!"
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Login successful",
+  "data": {
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "alice@example.com",
+      "name": "Alice Johnson",
+      "role": "USER",
+      "lastLoginAt": "2026-01-06T12:00:00.000Z"
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expiresIn": "1h"
+  },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+**Error Response - Invalid Credentials (401):**
+```json
+{
+  "success": false,
+  "message": "Invalid email or password",
+  "error": { "code": "UNAUTHORIZED" },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+### Token Refresh API
+
+**POST** `/api/auth/refresh`
+
+Refreshes an expired access token using a valid refresh token.
+
+**Request Body:**
+```json
+{
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "Token refreshed successfully",
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expiresIn": "1h"
+  },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+### Current User API (Protected)
+
+**GET** `/api/auth/me`
+
+Returns the authenticated user's profile.
+
+**Request Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+**Success Response (200):**
+```json
+{
+  "success": true,
+  "message": "User profile retrieved successfully",
+  "data": {
+    "user": {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "email": "alice@example.com",
+      "name": "Alice Johnson",
+      "role": "USER",
+      "avatarUrl": null,
+      "bio": null,
+      "_count": {
+        "reviews": 5,
+        "trips": 3,
+        "bookings": 2,
+        "favorites": 10
+      }
+    }
+  },
+  "timestamp": "2026-01-06T12:00:00.000Z"
+}
+```
+
+### Testing Auth APIs
+
+**Signup Request (curl):**
+```bash
+curl -X POST http://localhost:3000/api/auth/signup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Alice Johnson",
+    "email": "alice@example.com",
+    "password": "SecurePass123!",
+    "confirmPassword": "SecurePass123!"
+  }'
+```
+
+**Login Request (curl):**
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "alice@example.com",
+    "password": "SecurePass123!"
+  }'
+```
+
+**Access Protected Route (curl):**
+```bash
+curl -X GET http://localhost:3000/api/auth/me \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+### Security Implementation Details
+
+#### Password Hashing with bcrypt
+
+```typescript
+// app/api/auth/signup/route.ts
+import bcrypt from "bcrypt";
+
+const SALT_ROUNDS = 12; // Higher = more secure but slower
+
+// Hash password before storing
+const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+// Verify password during login
+const isValid = await bcrypt.compare(password, user.passwordHash);
+```
+
+**Why bcrypt?**
+- Automatically generates unique salts
+- Computationally expensive (prevents brute force)
+- Even if database is leaked, passwords remain secure
+
+#### JWT Token Generation
+
+```typescript
+// lib/auth.ts
+import jwt from "jsonwebtoken";
+
+const JWT_SECRET = process.env.JWT_SECRET;
+
+// Generate tokens
+const accessToken = jwt.sign(
+  { id: user.id, email: user.email, role: user.role },
+  JWT_SECRET,
+  { expiresIn: "1h" }
+);
+
+const refreshToken = jwt.sign(
+  { id: user.id, email: user.email },
+  JWT_REFRESH_SECRET,
+  { expiresIn: "7d" }
+);
+```
+
+#### Protecting Routes
+
+```typescript
+// lib/auth.ts
+export function authenticateRequest(request: NextRequest): AuthResult {
+  const token = extractBearerToken(request);
+  if (!token) {
+    return { success: false, message: "Authorization token is missing" };
+  }
+  
+  const decoded = verifyAccessToken(token);
+  if (!decoded) {
+    return { success: false, message: "Invalid or expired token" };
+  }
+  
+  return { success: true, user: decoded };
+}
+```
+
+### Token Expiry & Refresh Strategy
+
+| Token Type | Expiry | Purpose |
+|------------|--------|---------|
+| Access Token | 1 hour | Short-lived, used for API requests |
+| Refresh Token | 7 days | Long-lived, used to get new access tokens |
+
+**Refresh Flow:**
+1. Access token expires after 1 hour
+2. Client sends refresh token to `/api/auth/refresh`
+3. Server verifies refresh token and issues new token pair
+4. Client stores new tokens and continues
+
+**Token Storage Recommendations:**
+
+| Storage Method | Pros | Cons | Best For |
+|----------------|------|------|----------|
+| `localStorage` | Easy to use, persists across tabs | Vulnerable to XSS | SPAs with strong CSP |
+| `sessionStorage` | Cleared on tab close | Lost across tabs | Sensitive sessions |
+| `httpOnly cookies` | XSS-resistant | Requires CSRF protection | Most secure option |
+| Memory (React state) | Most secure against XSS | Lost on refresh | High-security apps |
+
+**Recommended Approach:**
+- Store **access token** in memory (React state)
+- Store **refresh token** in `httpOnly` cookie
+- Use refresh token to silently renew access token
+
+### Environment Variables
+
+```env
+# .env.local
+JWT_SECRET=your-super-secret-jwt-key-min-32-characters
+JWT_REFRESH_SECRET=your-refresh-secret-key-min-32-characters
+```
+
+⚠️ **Important:** Never commit secrets to version control. Use environment variables in production.
+
+### Reflection on Authentication Security
+
+**Key Security Principles:**
+1. **Never store plain-text passwords** - bcrypt with 12+ salt rounds
+2. **Short-lived access tokens** - Minimize damage if token is stolen
+3. **Refresh token rotation** - Issue new refresh token on each use
+4. **Use HTTPS only** - Prevent token interception
+5. **Validate on every request** - Never trust client-side data
+
+**Pro Tip:** "A good authentication system is invisible when it works — but disastrous when it fails. Secure it early, test it often, and document it clearly."
+
+---
+
 ## 🌐 RESTful API Route Structure
 
 This section documents the RESTful API architecture implemented using Next.js file-based routing under the `/api/` directory.
