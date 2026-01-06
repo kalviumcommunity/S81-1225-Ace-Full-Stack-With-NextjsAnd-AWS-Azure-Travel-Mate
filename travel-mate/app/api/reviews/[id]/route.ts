@@ -16,10 +16,11 @@ import { logger } from "@/lib/logger";
 import {
   sendSuccess,
   sendNotFound,
-  sendBadRequest,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { updateReviewSchema } from "@/lib/schemas";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -93,7 +94,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
-    const body = await request.json();
+
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, updateReviewSchema);
+    if (!validation.success) {
+      return validation.error;
+    }
 
     // Check if review exists
     const existingReview = await prisma.review.findUnique({
@@ -104,18 +110,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return sendNotFound("Review not found", ERROR_CODES.REVIEW_NOT_FOUND);
     }
 
-    // Extract updatable fields
-    const { rating, title, comment, status, visitDate } = body;
+    const { rating, title, comment, status, visitDate } = validation.data;
 
     // Build update data
     const updateData: Record<string, unknown> = {};
     if (rating !== undefined) {
-      if (rating < 1 || rating > 5) {
-        return sendBadRequest(
-          "Rating must be between 1 and 5",
-          ERROR_CODES.REVIEW_INVALID_RATING
-        );
-      }
       updateData.rating = Number(rating);
     }
     if (title !== undefined) updateData.title = title;
@@ -123,13 +122,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (status !== undefined) updateData.status = status;
     if (visitDate !== undefined)
       updateData.visitDate = visitDate ? new Date(visitDate) : null;
-
-    if (Object.keys(updateData).length === 0) {
-      return sendBadRequest(
-        "No fields to update",
-        ERROR_CODES.VALIDATION_ERROR
-      );
-    }
 
     const review = await prisma.review.update({
       where: { id },

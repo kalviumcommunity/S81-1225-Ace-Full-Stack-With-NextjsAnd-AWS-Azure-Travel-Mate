@@ -9,9 +9,11 @@
  * - Improved developer experience (DX)
  * - Simplified error debugging
  * - Enhanced observability in production
+ * - Integrated Zod validation error handling
  */
 
 import { NextResponse } from "next/server";
+import { ZodError, ZodSchema } from "zod";
 import { ERROR_CODES, ErrorCode } from "./errorCodes";
 
 /**
@@ -38,6 +40,14 @@ export interface PaginationMeta {
   totalPages: number;
   hasNextPage: boolean;
   hasPrevPage: boolean;
+}
+
+/**
+ * Zod validation error field structure
+ */
+export interface ZodFieldError {
+  field: string | number;
+  message: string;
 }
 
 /**
@@ -296,4 +306,126 @@ export const sendDatabaseError = (
   details?: unknown
 ): NextResponse<ApiResponse<never>> => {
   return sendError(message, ERROR_CODES.DATABASE_ERROR, 500, details);
+};
+
+/**
+ * Format Zod validation errors into a structured array
+ *
+ * @param error - ZodError instance
+ * @returns Array of field-specific error messages
+ */
+export const formatZodErrors = (error: ZodError): ZodFieldError[] => {
+  return error.issues.map((issue) => ({
+    field: String(issue.path[0] ?? "unknown"),
+    message: issue.message,
+  }));
+};
+
+/**
+ * Send a Zod validation error response
+ *
+ * @param error - ZodError instance from schema validation
+ * @param message - Overall error message (default: "Validation Error")
+ * @returns NextResponse with 400 status and structured validation errors
+ *
+ * @example
+ * ```ts
+ * try {
+ *   const data = userSchema.parse(body);
+ * } catch (error) {
+ *   if (error instanceof ZodError) {
+ *     return sendZodValidationError(error);
+ *   }
+ * }
+ * ```
+ */
+export const sendZodValidationError = (
+  error: ZodError,
+  message = "Validation Error"
+): NextResponse<ApiResponse<never>> => {
+  const formattedErrors = formatZodErrors(error);
+  return sendError(message, ERROR_CODES.VALIDATION_ERROR, 400, formattedErrors);
+};
+
+/**
+ * Validate request body against a Zod schema
+ *
+ * @param schema - Zod schema to validate against
+ * @param data - Request body data to validate
+ * @returns Validated and typed data or throws formatted error response
+ *
+ * @example
+ * ```ts
+ * const result = validateSchema(createUserSchema, body);
+ * if (result.success) {
+ *   const validData = result.data;
+ * } else {
+ *   return result.error; // NextResponse with validation errors
+ * }
+ * ```
+ */
+export const validateSchema = <T>(
+  schema: ZodSchema<T>,
+  data: unknown
+):
+  | { success: true; data: T }
+  | { success: false; error: NextResponse<ApiResponse<never>> } => {
+  try {
+    const validatedData = schema.parse(data);
+    return { success: true, data: validatedData };
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return { success: false, error: sendZodValidationError(error) };
+    }
+    return {
+      success: false,
+      error: sendBadRequest(
+        "Invalid request body",
+        ERROR_CODES.VALIDATION_ERROR
+      ),
+    };
+  }
+};
+
+/**
+ * Async validation wrapper for API handlers
+ *
+ * Validates incoming request body against a schema and returns
+ * either validated data or an error response.
+ *
+ * @param request - NextRequest object
+ * @param schema - Zod schema to validate against
+ * @returns Object with either validated data or error response
+ *
+ * @example
+ * ```ts
+ * export async function POST(request: NextRequest) {
+ *   const validation = await validateRequest(request, createUserSchema);
+ *   if (!validation.success) {
+ *     return validation.error;
+ *   }
+ *   const { email, name, role } = validation.data;
+ *   // ... proceed with validated data
+ * }
+ * ```
+ */
+export const validateRequest = async <T>(
+  request: Request,
+  schema: ZodSchema<T>
+): Promise<
+  | { success: true; data: T }
+  | { success: false; error: NextResponse<ApiResponse<never>> }
+> => {
+  try {
+    const body = await request.json();
+    return validateSchema(schema, body);
+  } catch {
+    return {
+      success: false,
+      error: sendBadRequest(
+        "Invalid JSON in request body",
+        ERROR_CODES.VALIDATION_ERROR
+      ),
+    };
+  }
 };

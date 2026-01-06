@@ -16,11 +16,12 @@ import { Prisma } from "@prisma/client";
 import {
   sendPaginatedSuccess,
   sendSuccess,
-  sendValidationError,
   sendNotFound,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { createTripSchema } from "@/lib/schemas";
 
 // ============================================
 // GET /api/trips - List trips with pagination
@@ -183,9 +184,12 @@ export async function GET(request: NextRequest) {
 // ============================================
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, createTripSchema);
+    if (!validation.success) {
+      return validation.error;
+    }
 
-    // Validate required fields
     const {
       name,
       description,
@@ -197,14 +201,7 @@ export async function POST(request: NextRequest) {
       status,
       isPublic,
       coverImage,
-    } = body;
-
-    if (!name || !userId) {
-      return sendValidationError({
-        name: !name ? "Name is required" : null,
-        userId: !userId ? "User ID is required" : null,
-      });
-    }
+    } = validation.data;
 
     // Check if user exists
     const user = await prisma.user.findUnique({

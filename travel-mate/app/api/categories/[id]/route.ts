@@ -18,8 +18,10 @@ import {
   sendNotFound,
   sendBadRequest,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { updateCategorySchema } from "@/lib/schemas";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -90,7 +92,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
-    const body = await request.json();
+
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, updateCategorySchema);
+    if (!validation.success) {
+      return validation.error;
+    }
 
     // Check if category exists
     const existingCategory = await prisma.category.findUnique({
@@ -101,8 +108,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return sendNotFound("Category not found", ERROR_CODES.CATEGORY_NOT_FOUND);
     }
 
-    // Extract updatable fields
-    const { name, description, iconUrl, isActive, sortOrder } = body;
+    const { name, description, iconUrl, isActive, sortOrder } = validation.data;
 
     // Build update data
     const updateData: Record<string, unknown> = {};
@@ -111,13 +117,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (iconUrl !== undefined) updateData.iconUrl = iconUrl;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (sortOrder !== undefined) updateData.sortOrder = sortOrder;
-
-    if (Object.keys(updateData).length === 0) {
-      return sendBadRequest(
-        "No fields to update",
-        ERROR_CODES.VALIDATION_ERROR
-      );
-    }
 
     const category = await prisma.category.update({
       where: { id },

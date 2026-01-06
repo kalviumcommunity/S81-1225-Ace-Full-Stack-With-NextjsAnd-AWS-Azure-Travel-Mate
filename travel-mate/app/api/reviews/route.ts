@@ -16,13 +16,13 @@ import { Prisma } from "@prisma/client";
 import {
   sendPaginatedSuccess,
   sendSuccess,
-  sendValidationError,
   sendNotFound,
   sendConflict,
-  sendBadRequest,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { createReviewSchema } from "@/lib/schemas";
 
 // ============================================
 // GET /api/reviews - List reviews with pagination
@@ -180,26 +180,14 @@ export async function GET(request: NextRequest) {
 // ============================================
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-
-    // Validate required fields
-    const { userId, placeId, rating, title, comment, visitDate } = body;
-
-    if (!userId || !placeId || rating === undefined) {
-      return sendValidationError({
-        userId: !userId ? "User ID is required" : null,
-        placeId: !placeId ? "Place ID is required" : null,
-        rating: rating === undefined ? "Rating is required" : null,
-      });
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, createReviewSchema);
+    if (!validation.success) {
+      return validation.error;
     }
 
-    // Validate rating range
-    if (rating < 1 || rating > 5) {
-      return sendBadRequest(
-        "Rating must be between 1 and 5",
-        ERROR_CODES.REVIEW_INVALID_RATING
-      );
-    }
+    const { userId, placeId, rating, title, comment, visitDate } =
+      validation.data;
 
     // Check if user exists
     const user = await prisma.user.findUnique({

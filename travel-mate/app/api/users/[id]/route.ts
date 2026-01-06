@@ -16,10 +16,11 @@ import { logger } from "@/lib/logger";
 import {
   sendSuccess,
   sendNotFound,
-  sendBadRequest,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { updateUserSchema } from "@/lib/schemas";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -105,7 +106,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 export async function PUT(request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
-    const body = await request.json();
+
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, updateUserSchema);
+    if (!validation.success) {
+      return validation.error;
+    }
 
     // Check if user exists
     const existingUser = await prisma.user.findUnique({
@@ -116,9 +122,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return sendNotFound("User");
     }
 
-    // Extract updatable fields
     const { name, bio, phoneNumber, avatarUrl, role, isActive, emailVerified } =
-      body;
+      validation.data;
 
     // Build update data
     const updateData: Record<string, unknown> = {};
@@ -129,10 +134,6 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     if (role !== undefined) updateData.role = role;
     if (isActive !== undefined) updateData.isActive = isActive;
     if (emailVerified !== undefined) updateData.emailVerified = emailVerified;
-
-    if (Object.keys(updateData).length === 0) {
-      return sendBadRequest("No fields to update");
-    }
 
     const user = await prisma.user.update({
       where: { id },

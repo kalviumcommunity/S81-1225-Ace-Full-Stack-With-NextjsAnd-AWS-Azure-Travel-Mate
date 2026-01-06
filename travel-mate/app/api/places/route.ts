@@ -16,11 +16,12 @@ import { Prisma } from "@prisma/client";
 import {
   sendPaginatedSuccess,
   sendSuccess,
-  sendValidationError,
   sendNotFound,
   sendError,
+  validateRequest,
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import { createPlaceSchema } from "@/lib/schemas";
 
 // ============================================
 // GET /api/places - List places with pagination
@@ -203,9 +204,12 @@ export async function GET(request: NextRequest) {
 // ============================================
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // Validate request body with Zod schema
+    const validation = await validateRequest(request, createPlaceSchema);
+    if (!validation.success) {
+      return validation.error;
+    }
 
-    // Validate required fields
     const {
       name,
       description,
@@ -218,15 +222,7 @@ export async function POST(request: NextRequest) {
       imageUrl,
       priceLevel,
       isFeatured,
-    } = body;
-
-    if (!name || !country || !categoryId) {
-      return sendValidationError({
-        name: !name ? "Name is required" : null,
-        country: !country ? "Country is required" : null,
-        categoryId: !categoryId ? "Category ID is required" : null,
-      });
-    }
+    } = validation.data;
 
     // Check if category exists
     const category = await prisma.category.findUnique({
