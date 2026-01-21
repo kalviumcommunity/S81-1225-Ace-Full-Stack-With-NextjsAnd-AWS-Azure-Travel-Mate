@@ -3,6 +3,7 @@
  *
  * RESTful API endpoints for individual place operations.
  * Supports: GET (read), PUT (update), DELETE (remove)
+ * Implements Redis caching with cache-aside pattern.
  *
  * Endpoints:
  * - GET    /api/places/[id]  - Get a specific place
@@ -21,6 +22,13 @@ import {
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
 import { updatePlaceSchema } from "@/lib/schemas";
+import {
+  cacheAside,
+  buildItemCacheKey,
+  CachePrefix,
+  CacheTTL,
+  invalidatePlacesCache,
+} from "@/lib/cache";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -30,83 +38,102 @@ interface RouteParams {
 // GET /api/places/[id] - Get a specific place
 // ============================================
 export async function GET(request: NextRequest, { params }: RouteParams) {
+  const startTime = performance.now();
+
   try {
     const { id } = await params;
+    const { searchParams } = new URL(request.url);
+    const skipCache = searchParams.get("_bypass_cache") === "true";
 
-    const place = await prisma.place.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        name: true,
-        slug: true,
-        description: true,
-        address: true,
-        city: true,
-        country: true,
-        latitude: true,
-        longitude: true,
-        imageUrl: true,
-        rating: true,
-        reviewCount: true,
-        priceLevel: true,
-        isActive: true,
-        isFeatured: true,
-        createdAt: true,
-        updatedAt: true,
-        category: {
+    // Build cache key for individual place
+    const cacheKey = buildItemCacheKey(CachePrefix.PLACES, id);
+
+    // Use cache-aside pattern
+    const {
+      data: place,
+      cached,
+      duration,
+    } = await cacheAside({
+      key: cacheKey,
+      ttl: CacheTTL.MEDIUM, // 5 minutes for individual place details
+      skipCache,
+      fetchFn: async () => {
+        return prisma.place.findUnique({
+          where: { id },
           select: {
             id: true,
             name: true,
             slug: true,
             description: true,
-          },
-        },
-        images: {
-          orderBy: { sortOrder: "asc" },
-          select: {
-            id: true,
-            url: true,
-            altText: true,
-            isPrimary: true,
-          },
-        },
-        amenities: {
-          select: {
-            amenity: {
-              select: {
-                id: true,
-                name: true,
-                icon: true,
-              },
-            },
-          },
-        },
-        reviews: {
-          take: 10,
-          orderBy: { createdAt: "desc" },
-          where: { status: "APPROVED" },
-          select: {
-            id: true,
+            address: true,
+            city: true,
+            country: true,
+            latitude: true,
+            longitude: true,
+            imageUrl: true,
             rating: true,
-            title: true,
-            comment: true,
+            reviewCount: true,
+            priceLevel: true,
+            isActive: true,
+            isFeatured: true,
             createdAt: true,
-            user: {
+            updatedAt: true,
+            category: {
               select: {
                 id: true,
                 name: true,
-                avatarUrl: true,
+                slug: true,
+                description: true,
+              },
+            },
+            images: {
+              orderBy: { sortOrder: "asc" },
+              select: {
+                id: true,
+                url: true,
+                altText: true,
+                isPrimary: true,
+              },
+            },
+            amenities: {
+              select: {
+                amenity: {
+                  select: {
+                    id: true,
+                    name: true,
+                    icon: true,
+                  },
+                },
+              },
+            },
+            reviews: {
+              take: 10,
+              orderBy: { createdAt: "desc" },
+              where: { status: "APPROVED" },
+              select: {
+                id: true,
+                rating: true,
+                title: true,
+                comment: true,
+                createdAt: true,
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    avatarUrl: true,
+                  },
+                },
+              },
+            },
+            _count: {
+              select: {
+                reviews: true,
+                favorites: true,
+                bookings: true,
               },
             },
           },
-        },
-        _count: {
-          select: {
-            reviews: true,
-            favorites: true,
-            bookings: true,
-          },
-        },
+        });
       },
     });
 
@@ -114,9 +141,26 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return sendNotFound("Place");
     }
 
-    logger.info("Place fetched successfully", { placeId: id });
+    const totalDuration = performance.now() - startTime;
+    logger.info("Place fetched successfully", {
+      placeId: id,
+      cached,
+      duration: `${duration.toFixed(2)}ms`,
+      totalDuration: `${totalDuration.toFixed(2)}ms`,
+    });
 
-    return sendSuccess(place, "Place fetched successfully");
+    return sendSuccess(
+      {
+        ...place,
+        _cache: {
+          hit: cached,
+          key: cacheKey,
+          ttl: CacheTTL.MEDIUM,
+          duration: `${duration.toFixed(2)}ms`,
+        },
+      },
+      "Place fetched successfully"
+    );
   } catch (error) {
     logger.error("Failed to fetch place", { error });
     return sendError(
@@ -225,6 +269,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     logger.info("Place updated successfully", { placeId: id });
 
+    // Invalidate cache after updating place
+    await invalidatePlacesCache(id);
+
     return sendSuccess(place, "Place updated successfully");
   } catch (error) {
     logger.error("Failed to update place", { error });
@@ -239,7 +286,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 // ============================================
 // DELETE /api/places/[id] - Delete a place
 // ============================================
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
 
@@ -259,6 +306,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     });
 
     logger.info("Place deleted successfully", { placeId: id });
+
+    // Invalidate cache after deleting place
+    await invalidatePlacesCache(id);
 
     return sendSuccess(null, "Place deleted successfully");
   } catch (error) {
