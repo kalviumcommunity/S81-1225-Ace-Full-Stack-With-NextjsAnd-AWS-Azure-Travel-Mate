@@ -1052,6 +1052,357 @@ const PROTECTED_ROUTES = [
 
 ---
 
+## 🚨 Centralized Error Handling
+
+This application implements a comprehensive **Centralized Error Handling** system that provides consistent error responses, structured logging, and environment-aware error disclosure.
+
+### Why Centralized Error Handling?
+
+| Benefit | Description |
+|---------|-------------|
+| **Consistency** | Every API endpoint returns errors in the same format |
+| **Security** | Sensitive details (stack traces, internal errors) are hidden in production |
+| **Debugging** | Structured logs make it easy to trace issues in monitoring tools |
+| **Developer Experience** | Clear error messages help developers debug faster |
+| **User Trust** | Users see friendly messages, not cryptic technical errors |
+
+### Error Handling Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        API Route Handler                             │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼ (error thrown)
+┌─────────────────────────────────────────────────────────────────────┐
+│                     handleError(error, context)                      │
+│                     Central Error Handler                            │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+          ┌───────────────────────┼───────────────────────┐
+          ▼                       ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│  Normalize      │    │  Log Error      │    │  Create         │
+│  Error Type     │    │  (Structured)   │    │  Response       │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+          │                       │                       │
+          ▼                       ▼                       ▼
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│ AppError        │    │ JSON logs for   │    │ Dev: Full details│
+│ ValidationError │    │ CloudWatch/ELK  │    │ Prod: Safe msg   │
+│ NotFoundError   │    │ Human-readable  │    │                   │
+│ DatabaseError   │    │ for dev         │    │                   │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+### Logger Implementation
+
+The logger provides structured JSON output for production (ideal for log aggregators) and human-readable output for development.
+
+```typescript
+// lib/logger.ts
+
+type LogLevel = "info" | "warn" | "error" | "debug" | "fatal";
+
+interface StructuredLog {
+  level: LogLevel;
+  message: string;
+  timestamp: string;
+  environment: string;
+  service: string;
+  meta?: Record<string, unknown>;
+  error?: {
+    name: string;
+    message: string;
+    stack?: string;  // Only in development
+    code?: string;
+  };
+  request?: {
+    method?: string;
+    path?: string;
+    userId?: string;
+  };
+  duration?: number;
+}
+
+export const logger = {
+  info: (message: string, meta?: Record<string, unknown>) => { /* ... */ },
+  warn: (message: string, meta?: Record<string, unknown>) => { /* ... */ },
+  error: (message: string, error?: Error, request?: RequestContext) => { /* ... */ },
+  debug: (message: string, meta?: Record<string, unknown>) => { /* ... */ },
+  fatal: (message: string, error?: Error, request?: RequestContext) => { /* ... */ },
+  
+  // Log with request context
+  withRequest: (request: RequestContext) => ({
+    info: (message, meta) => { /* ... */ },
+    error: (message, error) => { /* ... */ },
+  }),
+  
+  // Measure execution time
+  time: (label: string) => ({
+    end: (meta) => { /* returns duration in ms */ },
+  }),
+  
+  // Log HTTP request/response
+  http: (method, path, status, duration, meta) => { /* ... */ },
+};
+```
+
+### Custom Error Classes
+
+```typescript
+// lib/errorHandler.ts
+
+// Base application error
+class AppError extends Error {
+  statusCode: number;
+  code: string;
+  isOperational: boolean;
+  details?: unknown;
+}
+
+// Specific error types
+class ValidationError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super(message, 400, "E100");
+  }
+}
+
+class AuthenticationError extends AppError {
+  constructor(message = "Authentication required") {
+    super(message, 401, "E200");
+  }
+}
+
+class AuthorizationError extends AppError {
+  constructor(message = "Access denied") {
+    super(message, 403, "E201");
+  }
+}
+
+class NotFoundError extends AppError {
+  constructor(resource = "Resource") {
+    super(`${resource} not found`, 404, "E300");
+  }
+}
+
+class ConflictError extends AppError {
+  constructor(message: string) {
+    super(message, 409, "E301");
+  }
+}
+
+class DatabaseError extends AppError {
+  constructor(message = "Database operation failed") {
+    super(message, 500, "E501");
+  }
+}
+```
+
+### Central Error Handler
+
+```typescript
+// lib/errorHandler.ts
+
+export function handleError(
+  error: unknown,
+  context?: ErrorContext
+): NextResponse {
+  // 1. Normalize error to AppError
+  let appError: AppError;
+  
+  if (error instanceof AppError) {
+    appError = error;
+  } else if (error instanceof ZodError) {
+    appError = handleZodError(error);
+  } else if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    appError = handlePrismaError(error);
+  } else if (error instanceof Error) {
+    appError = new AppError(error.message, 500, "E500", { isOperational: false });
+  }
+  
+  // 2. Log the error (structured)
+  logError(appError, context);
+  
+  // 3. Create response based on environment
+  if (IS_PRODUCTION) {
+    return createProdResponse(appError);  // Safe message only
+  } else {
+    return createDevResponse(appError);   // Full details + stack
+  }
+}
+```
+
+### Using Error Handler in Routes
+
+```typescript
+// app/api/users/route.ts
+
+export async function GET(request: NextRequest) {
+  const context = { method: "GET", path: "/api/users", operation: "listUsers" };
+  
+  try {
+    const timer = logger.time("GET /api/users");
+    
+    const users = await prisma.user.findMany();
+    
+    timer.end({ usersCount: users.length });
+    return sendSuccess(users);
+    
+  } catch (error) {
+    // All errors handled consistently
+    return handleError(error, context);
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const context = { method: "POST", path: "/api/users", operation: "createUser" };
+  
+  try {
+    const { email } = await request.json();
+    
+    const existingUser = await prisma.user.findUnique({ where: { email } });
+    if (existingUser) {
+      // Throw custom error
+      throw new ConflictError("User with this email already exists");
+    }
+    
+    const user = await prisma.user.create({ data: { email } });
+    return sendSuccess(user, "User created", 201);
+    
+  } catch (error) {
+    return handleError(error, context);
+  }
+}
+```
+
+### Testing Error Handling
+
+#### Development Mode Response
+
+```bash
+curl -X GET "http://localhost:3000/api/users?_simulate_error=true"
+```
+
+**Response (Development):**
+```json
+{
+  "success": false,
+  "message": "Simulated database connection failure!",
+  "error": {
+    "code": "E500",
+    "name": "AppError",
+    "stack": "Error: Simulated database connection failure!\n    at GET (/api/users/route.ts:58:13)\n    at ..."
+  },
+  "timestamp": "2026-01-21T12:00:00.000Z",
+  "path": "/api/users",
+  "method": "GET"
+}
+```
+
+#### Production Mode Response
+
+```bash
+# Set NODE_ENV=production
+curl -X GET "http://localhost:3000/api/users?_simulate_error=true"
+```
+
+**Response (Production):**
+```json
+{
+  "success": false,
+  "message": "Something went wrong. Please try again later.",
+  "error": {
+    "code": "E500"
+  },
+  "timestamp": "2026-01-21T12:00:00.000Z"
+}
+```
+
+### Console Log Output
+
+**Development (Human-Readable):**
+```
+[2026-01-21T12:00:00.000Z] [ERROR] Error in GET /api/users: Simulated database connection failure!
+Stack trace: Error: Simulated database connection failure!
+    at GET (/api/users/route.ts:58:13)
+    at ...
+```
+
+**Production (JSON Structured):**
+```json
+{
+  "level": "error",
+  "message": "Error in GET /api/users: Simulated database connection failure!",
+  "timestamp": "2026-01-21T12:00:00.000Z",
+  "environment": "production",
+  "service": "travel-mate-api",
+  "error": {
+    "name": "AppError",
+    "message": "Simulated database connection failure!",
+    "code": "E500"
+  },
+  "request": {
+    "method": "GET",
+    "path": "/api/users"
+  }
+}
+```
+
+### Error Codes Reference
+
+| Code Range | Category | Examples |
+|------------|----------|----------|
+| E1XX | Client Errors | E100 (Validation), E101 (Bad Request) |
+| E2XX | Auth Errors | E200 (Unauthorized), E201 (Forbidden) |
+| E3XX | Resource Errors | E300 (Not Found), E301 (Conflict) |
+| E4XX | Business Logic | E400 (Rule Violation), E403 (Insufficient Permissions) |
+| E5XX | Server Errors | E500 (Internal), E501 (Database) |
+| E6XX | Domain-Specific | E600 (User), E610 (Place), E620 (Trip) |
+
+### Scaling to Production Monitoring
+
+The structured JSON logging format is designed to integrate with cloud monitoring tools:
+
+**AWS CloudWatch Integration:**
+```typescript
+// The JSON logs can be parsed by CloudWatch Logs Insights
+// Query example:
+// fields @timestamp, @message
+// | filter level = "error"
+// | sort @timestamp desc
+```
+
+**ELK Stack (Elasticsearch, Logstash, Kibana):**
+- JSON logs can be ingested directly by Logstash
+- Create dashboards in Kibana for error tracking
+
+**Datadog/New Relic:**
+- Forward structured logs for APM integration
+- Set up alerts based on error rates
+
+### Security Reflection
+
+| Risk | Without Error Handler | With Error Handler |
+|------|----------------------|-------------------|
+| **Stack Trace Exposure** | Full stack traces visible to attackers | Hidden in production |
+| **Database Error Details** | SQL/Prisma errors expose schema | Generic "Database error" message |
+| **Internal Paths** | File paths reveal server structure | Only error codes returned |
+| **Error Rate Spikes** | Difficult to detect | Structured logs enable alerting |
+
+### Best Practices Implemented
+
+1. **Fail Secure** - Unknown errors return generic messages
+2. **Operational vs Programming Errors** - Distinguish between expected and unexpected errors
+3. **Structured Logging** - JSON format for machine parsing
+4. **Request Context** - Include method, path, userId for tracing
+5. **Performance Tracking** - Built-in timing utilities
+6. **Type Safety** - Custom error classes with proper typing
+
+**Remember:** "Good error handling is invisible to users but invaluable to developers. Log everything, show nothing sensitive."
+
+---
+
 ## 🌐 RESTful API Route Structure
 
 This section documents the RESTful API architecture implemented using Next.js file-based routing under the `/api/` directory.
