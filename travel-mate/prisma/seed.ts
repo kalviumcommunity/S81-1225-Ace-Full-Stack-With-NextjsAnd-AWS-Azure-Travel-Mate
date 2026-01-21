@@ -4,11 +4,30 @@ import {
   TripStatus,
   ReviewStatus,
 } from "@prisma/client";
+import bcrypt from "bcrypt";
 
 const prisma = new PrismaClient();
 
+// Password hash salt rounds (same as used in auth routes)
+const SALT_ROUNDS = 12;
+
+// Default passwords for seeded users (for testing only!)
+const DEFAULT_PASSWORDS = {
+  admin: "Admin123!",
+  user: "User123!",
+  moderator: "Mod123!",
+};
+
 async function main() {
   console.log("🌱 Starting database seeding...");
+
+  // Pre-hash passwords for seeded users
+  console.log("🔐 Hashing passwords...");
+  const passwordHashes = {
+    admin: await bcrypt.hash(DEFAULT_PASSWORDS.admin, SALT_ROUNDS),
+    user: await bcrypt.hash(DEFAULT_PASSWORDS.user, SALT_ROUNDS),
+    moderator: await bcrypt.hash(DEFAULT_PASSWORDS.moderator, SALT_ROUNDS),
+  };
 
   // ============================================
   // SEED CATEGORIES
@@ -141,10 +160,11 @@ async function main() {
   const users = await Promise.all([
     prisma.user.upsert({
       where: { email: "admin@travelmate.com" },
-      update: {},
+      update: { passwordHash: passwordHashes.admin },
       create: {
         email: "admin@travelmate.com",
         name: "Admin User",
+        passwordHash: passwordHashes.admin,
         role: UserRole.ADMIN,
         bio: "Travel Mate platform administrator",
         emailVerified: true,
@@ -153,10 +173,11 @@ async function main() {
     }),
     prisma.user.upsert({
       where: { email: "john.traveler@example.com" },
-      update: {},
+      update: { passwordHash: passwordHashes.user },
       create: {
         email: "john.traveler@example.com",
         name: "John Traveler",
+        passwordHash: passwordHashes.user,
         role: UserRole.USER,
         bio: "Adventure seeker and travel enthusiast. Visited 30+ countries!",
         emailVerified: true,
@@ -165,10 +186,11 @@ async function main() {
     }),
     prisma.user.upsert({
       where: { email: "sarah.explorer@example.com" },
-      update: {},
+      update: { passwordHash: passwordHashes.user },
       create: {
         email: "sarah.explorer@example.com",
         name: "Sarah Explorer",
+        passwordHash: passwordHashes.user,
         role: UserRole.USER,
         bio: "Nature lover and photography enthusiast",
         emailVerified: true,
@@ -177,10 +199,11 @@ async function main() {
     }),
     prisma.user.upsert({
       where: { email: "mike.wanderer@example.com" },
-      update: {},
+      update: { passwordHash: passwordHashes.moderator },
       create: {
         email: "mike.wanderer@example.com",
         name: "Mike Wanderer",
+        passwordHash: passwordHashes.moderator,
         role: UserRole.MODERATOR,
         bio: "Full-time traveler and content creator",
         emailVerified: true,
@@ -589,6 +612,18 @@ async function main() {
   console.log(`👥 Users: ${users.length}`);
   console.log(`📍 Places: ${places.length}`);
   console.log(`✈️ Trips: 2`);
+  console.log("========================================");
+  console.log("\n🔐 TEST CREDENTIALS FOR RBAC TESTING:");
+  console.log("----------------------------------------");
+  console.log("ADMIN:");
+  console.log(`  Email: admin@travelmate.com`);
+  console.log(`  Password: ${DEFAULT_PASSWORDS.admin}`);
+  console.log("\nMODERATOR:");
+  console.log(`  Email: mike.wanderer@example.com`);
+  console.log(`  Password: ${DEFAULT_PASSWORDS.moderator}`);
+  console.log("\nUSER:");
+  console.log(`  Email: john.traveler@example.com`);
+  console.log(`  Password: ${DEFAULT_PASSWORDS.user}`);
   console.log("========================================\n");
 }
 
