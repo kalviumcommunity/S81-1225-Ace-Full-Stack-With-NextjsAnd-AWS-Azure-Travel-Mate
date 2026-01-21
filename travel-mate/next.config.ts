@@ -7,14 +7,19 @@ const nextConfig: NextConfig = {
   // This creates a minimal production build that can run without node_modules
   output: "standalone",
 
-  // Disable ESLint during production builds (already run in CI/CD)
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-
   // Disable TypeScript errors during builds (already checked in CI/CD)
   typescript: {
     ignoreBuildErrors: true,
+  },
+
+  // Configure allowed image domains for next/image
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
+      },
+    ],
   },
 };
 
