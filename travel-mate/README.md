@@ -44,10 +44,12 @@ export const createUserSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(255),
   role: z.enum(["USER", "ADMIN", "MODERATOR"]).optional().default("USER"),
   bio: z.string().max(1000).optional().nullable(),
-  phoneNumber: z.string()
+  phoneNumber: z
+    .string()
     .max(20)
     .regex(/^[+]?[(]?[0-9]{1,4}[)]?[-\s./0-9]*$/, "Invalid phone number")
-    .optional().nullable(),
+    .optional()
+    .nullable(),
   avatarUrl: z.string().url("Invalid avatar URL").optional().nullable(),
 });
 
@@ -58,19 +60,21 @@ export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 ```typescript
 // lib/schemas/booking.schema.ts
-export const createBookingSchema = z.object({
-  userId: z.string().uuid("Invalid user ID format"),
-  placeId: z.string().uuid("Invalid place ID format"),
-  checkIn: z.string().datetime("Invalid check-in date format"),
-  checkOut: z.string().datetime("Invalid check-out date format"),
-  guestCount: z.number().int().min(1).max(100).optional().default(1),
-  totalAmount: z.number().positive().max(1000000),
-  currency: z.string().length(3).toUpperCase().optional().default("USD"),
-  specialRequests: z.string().max(2000).optional().nullable(),
-}).refine(
-  (data) => new Date(data.checkOut) > new Date(data.checkIn),
-  { message: "Check-out date must be after check-in date", path: ["checkOut"] }
-);
+export const createBookingSchema = z
+  .object({
+    userId: z.string().uuid("Invalid user ID format"),
+    placeId: z.string().uuid("Invalid place ID format"),
+    checkIn: z.string().datetime("Invalid check-in date format"),
+    checkOut: z.string().datetime("Invalid check-out date format"),
+    guestCount: z.number().int().min(1).max(100).optional().default(1),
+    totalAmount: z.number().positive().max(1000000),
+    currency: z.string().length(3).toUpperCase().optional().default("USD"),
+    specialRequests: z.string().max(2000).optional().nullable(),
+  })
+  .refine((data) => new Date(data.checkOut) > new Date(data.checkIn), {
+    message: "Check-out date must be after check-in date",
+    path: ["checkOut"],
+  });
 ```
 
 #### Review Schema (with Rating Range)
@@ -139,6 +143,7 @@ curl -X POST http://localhost:3000/api/users \
 ```
 
 **Response (201 Created):**
+
 ```json
 {
   "success": true,
@@ -162,6 +167,7 @@ curl -X POST http://localhost:3000/api/users \
 ```
 
 **Response (400 Bad Request):**
+
 ```json
 {
   "success": false,
@@ -192,6 +198,7 @@ curl -X POST http://localhost:3000/api/bookings \
 ```
 
 **Response (400 Bad Request):**
+
 ```json
 {
   "success": false,
@@ -199,7 +206,10 @@ curl -X POST http://localhost:3000/api/bookings \
   "error": {
     "code": "VALIDATION_ERROR",
     "details": [
-      { "field": "checkOut", "message": "Check-out date must be after check-in date" }
+      {
+        "field": "checkOut",
+        "message": "Check-out date must be after check-in date"
+      }
     ]
   },
   "timestamp": "2026-01-06T12:00:00.000Z"
@@ -281,12 +291,12 @@ This application implements secure user authentication using **bcrypt** for pass
 
 ### API Endpoints
 
-| Endpoint | Method | Description | Auth Required |
-|----------|--------|-------------|---------------|
-| `/api/auth/signup` | POST | Create new user account | No |
-| `/api/auth/login` | POST | Authenticate and get tokens | No |
-| `/api/auth/refresh` | POST | Refresh access token | No (needs refresh token) |
-| `/api/auth/me` | GET | Get current user profile | Yes |
+| Endpoint            | Method | Description                 | Auth Required            |
+| ------------------- | ------ | --------------------------- | ------------------------ |
+| `/api/auth/signup`  | POST   | Create new user account     | No                       |
+| `/api/auth/login`   | POST   | Authenticate and get tokens | No                       |
+| `/api/auth/refresh` | POST   | Refresh access token        | No (needs refresh token) |
+| `/api/auth/me`      | GET    | Get current user profile    | Yes                      |
 
 ### Auth API Directory Structure
 
@@ -309,6 +319,7 @@ app/api/auth/
 Creates a new user account with securely hashed password.
 
 **Request Body:**
+
 ```json
 {
   "name": "Alice Johnson",
@@ -319,6 +330,7 @@ Creates a new user account with securely hashed password.
 ```
 
 **Password Requirements:**
+
 - Minimum 8 characters
 - At least one uppercase letter
 - At least one lowercase letter
@@ -326,6 +338,7 @@ Creates a new user account with securely hashed password.
 - At least one special character
 
 **Success Response (201):**
+
 ```json
 {
   "success": true,
@@ -349,6 +362,7 @@ Creates a new user account with securely hashed password.
 ```
 
 **Error Response - Email Already Exists (409):**
+
 ```json
 {
   "success": false,
@@ -371,6 +385,7 @@ Creates a new user account with securely hashed password.
 Authenticates a user and returns JWT tokens.
 
 **Request Body:**
+
 ```json
 {
   "email": "alice@example.com",
@@ -379,6 +394,7 @@ Authenticates a user and returns JWT tokens.
 ```
 
 **Success Response (200):**
+
 ```json
 {
   "success": true,
@@ -400,6 +416,7 @@ Authenticates a user and returns JWT tokens.
 ```
 
 **Error Response - Invalid Credentials (401):**
+
 ```json
 {
   "success": false,
@@ -416,6 +433,7 @@ Authenticates a user and returns JWT tokens.
 Refreshes an expired access token using a valid refresh token.
 
 **Request Body:**
+
 ```json
 {
   "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
@@ -423,6 +441,7 @@ Refreshes an expired access token using a valid refresh token.
 ```
 
 **Success Response (200):**
+
 ```json
 {
   "success": true,
@@ -443,11 +462,13 @@ Refreshes an expired access token using a valid refresh token.
 Returns the authenticated user's profile.
 
 **Request Headers:**
+
 ```
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
 **Success Response (200):**
+
 ```json
 {
   "success": true,
@@ -475,6 +496,7 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ### Testing Auth APIs
 
 **Signup Request (curl):**
+
 ```bash
 curl -X POST http://localhost:3000/api/auth/signup \
   -H "Content-Type: application/json" \
@@ -487,6 +509,7 @@ curl -X POST http://localhost:3000/api/auth/signup \
 ```
 
 **Login Request (curl):**
+
 ```bash
 curl -X POST http://localhost:3000/api/auth/login \
   -H "Content-Type: application/json" \
@@ -497,6 +520,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 ```
 
 **Access Protected Route (curl):**
+
 ```bash
 curl -X GET http://localhost:3000/api/auth/me \
   -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
@@ -520,6 +544,7 @@ const isValid = await bcrypt.compare(password, user.passwordHash);
 ```
 
 **Why bcrypt?**
+
 - Automatically generates unique salts
 - Computationally expensive (prevents brute force)
 - Even if database is leaked, passwords remain secure
@@ -555,24 +580,25 @@ export function authenticateRequest(request: NextRequest): AuthResult {
   if (!token) {
     return { success: false, message: "Authorization token is missing" };
   }
-  
+
   const decoded = verifyAccessToken(token);
   if (!decoded) {
     return { success: false, message: "Invalid or expired token" };
   }
-  
+
   return { success: true, user: decoded };
 }
 ```
 
 ### Token Expiry & Refresh Strategy
 
-| Token Type | Expiry | Purpose |
-|------------|--------|---------|
-| Access Token | 1 hour | Short-lived, used for API requests |
+| Token Type    | Expiry | Purpose                                   |
+| ------------- | ------ | ----------------------------------------- |
+| Access Token  | 1 hour | Short-lived, used for API requests        |
 | Refresh Token | 7 days | Long-lived, used to get new access tokens |
 
 **Refresh Flow:**
+
 1. Access token expires after 1 hour
 2. Client sends refresh token to `/api/auth/refresh`
 3. Server verifies refresh token and issues new token pair
@@ -580,14 +606,15 @@ export function authenticateRequest(request: NextRequest): AuthResult {
 
 **Token Storage Recommendations:**
 
-| Storage Method | Pros | Cons | Best For |
-|----------------|------|------|----------|
-| `localStorage` | Easy to use, persists across tabs | Vulnerable to XSS | SPAs with strong CSP |
-| `sessionStorage` | Cleared on tab close | Lost across tabs | Sensitive sessions |
-| `httpOnly cookies` | XSS-resistant | Requires CSRF protection | Most secure option |
-| Memory (React state) | Most secure against XSS | Lost on refresh | High-security apps |
+| Storage Method       | Pros                              | Cons                     | Best For             |
+| -------------------- | --------------------------------- | ------------------------ | -------------------- |
+| `localStorage`       | Easy to use, persists across tabs | Vulnerable to XSS        | SPAs with strong CSP |
+| `sessionStorage`     | Cleared on tab close              | Lost across tabs         | Sensitive sessions   |
+| `httpOnly cookies`   | XSS-resistant                     | Requires CSRF protection | Most secure option   |
+| Memory (React state) | Most secure against XSS           | Lost on refresh          | High-security apps   |
 
 **Recommended Approach:**
+
 - Store **access token** in memory (React state)
 - Store **refresh token** in `httpOnly` cookie
 - Use refresh token to silently renew access token
@@ -605,6 +632,7 @@ JWT_REFRESH_SECRET=your-refresh-secret-key-min-32-characters
 ### Reflection on Authentication Security
 
 **Key Security Principles:**
+
 1. **Never store plain-text passwords** - bcrypt with 12+ salt rounds
 2. **Short-lived access tokens** - Minimize damage if token is stolen
 3. **Refresh token rotation** - Issue new refresh token on each use
@@ -636,11 +664,11 @@ enum UserRole {
 }
 ```
 
-| Role | Description | Access Level |
-|------|-------------|--------------|
-| `USER` | Regular authenticated users | Own profile, bookings, trips, reviews |
-| `MODERATOR` | Content moderators | User access + content moderation |
-| `ADMIN` | System administrators | Full access to all resources |
+| Role        | Description                 | Access Level                          |
+| ----------- | --------------------------- | ------------------------------------- |
+| `USER`      | Regular authenticated users | Own profile, bookings, trips, reviews |
+| `MODERATOR` | Content moderators          | User access + content moderation      |
+| `ADMIN`     | System administrators       | Full access to all resources          |
 
 ### Middleware Flow Diagram
 
@@ -716,7 +744,7 @@ enum UserRole {
 const PROTECTED_ROUTES = [
   {
     pattern: /^\/api\/admin(\/.*)?$/,
-    allowedRoles: [UserRole.ADMIN],           // Admin only
+    allowedRoles: [UserRole.ADMIN], // Admin only
     requireAuth: true,
   },
   {
@@ -733,27 +761,27 @@ const PROTECTED_ROUTES = [
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  
+
   // Find route config
-  const routeConfig = PROTECTED_ROUTES.find(r => r.pattern.test(pathname));
-  
+  const routeConfig = PROTECTED_ROUTES.find((r) => r.pattern.test(pathname));
+
   if (!routeConfig?.requireAuth) {
     return NextResponse.next();
   }
-  
+
   // Extract and verify token
   const token = request.headers.get("authorization")?.slice(7);
-  
+
   if (!token) {
     return NextResponse.json(
       { success: false, message: "Authorization token is required" },
       { status: 401 }
     );
   }
-  
+
   try {
     const { payload } = await jwtVerify(token, JWT_SECRET);
-    
+
     // Check role-based access
     if (!routeConfig.allowedRoles.includes(payload.role as UserRole)) {
       return NextResponse.json(
@@ -761,12 +789,12 @@ export async function middleware(request: NextRequest) {
         { status: 403 }
       );
     }
-    
+
     // Add user info to headers for downstream handlers
     const headers = new Headers(request.headers);
     headers.set("x-user-id", payload.id as string);
     headers.set("x-user-role", payload.role as string);
-    
+
     return NextResponse.next({ request: { headers } });
   } catch {
     return NextResponse.json(
@@ -783,26 +811,26 @@ export const config = {
 
 ### Protected Routes Configuration
 
-| Route Pattern | Allowed Roles | Description |
-|---------------|---------------|-------------|
-| `/api/admin/*` | ADMIN | System administration |
-| `/api/admin/users` | ADMIN | User management |
-| `/api/admin/stats` | ADMIN | System statistics |
-| `/api/moderation/*` | ADMIN, MODERATOR | Content moderation |
-| `/api/bookings/*` | USER, ADMIN, MODERATOR | Booking management |
-| `/api/trips/*` | USER, ADMIN, MODERATOR | Trip management |
-| `/api/reviews/*` | USER, ADMIN, MODERATOR | Review management |
+| Route Pattern       | Allowed Roles          | Description           |
+| ------------------- | ---------------------- | --------------------- |
+| `/api/admin/*`      | ADMIN                  | System administration |
+| `/api/admin/users`  | ADMIN                  | User management       |
+| `/api/admin/stats`  | ADMIN                  | System statistics     |
+| `/api/moderation/*` | ADMIN, MODERATOR       | Content moderation    |
+| `/api/bookings/*`   | USER, ADMIN, MODERATOR | Booking management    |
+| `/api/trips/*`      | USER, ADMIN, MODERATOR | Trip management       |
+| `/api/reviews/*`    | USER, ADMIN, MODERATOR | Review management     |
 
 ### Public Routes (No Authentication Required)
 
-| Route | Description |
-|-------|-------------|
-| `/api/auth/login` | User authentication |
-| `/api/auth/signup` | User registration |
-| `/api/auth/refresh` | Token refresh |
-| `/api/health` | Health check |
-| `/api/places` | List places (public) |
-| `/api/categories` | List categories (public) |
+| Route               | Description              |
+| ------------------- | ------------------------ |
+| `/api/auth/login`   | User authentication      |
+| `/api/auth/signup`  | User registration        |
+| `/api/auth/refresh` | Token refresh            |
+| `/api/health`       | Health check             |
+| `/api/places`       | List places (public)     |
+| `/api/categories`   | List categories (public) |
 
 ### Admin API Endpoints
 
@@ -827,12 +855,12 @@ export const config = {
 
 After running `npm run db:seed`, the following test accounts are available:
 
-| Role | Email | Password |
-|------|-------|----------|
-| **ADMIN** | `admin@travelmate.com` | `Admin123!` |
-| **MODERATOR** | `mike.wanderer@example.com` | `Mod123!` |
-| **USER** | `john.traveler@example.com` | `User123!` |
-| **USER** | `sarah.explorer@example.com` | `User123!` |
+| Role          | Email                        | Password    |
+| ------------- | ---------------------------- | ----------- |
+| **ADMIN**     | `admin@travelmate.com`       | `Admin123!` |
+| **MODERATOR** | `mike.wanderer@example.com`  | `Mod123!`   |
+| **USER**      | `john.traveler@example.com`  | `User123!`  |
+| **USER**      | `sarah.explorer@example.com` | `User123!`  |
 
 > ⚠️ **Security Note:** These credentials are for development/testing only. Never use these in production!
 
@@ -853,6 +881,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -874,6 +903,7 @@ curl -X GET http://localhost:3000/api/users \
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "success": true,
@@ -890,6 +920,7 @@ curl -X GET http://localhost:3000/api/admin \
 ```
 
 **Response (200 OK):**
+
 ```json
 {
   "success": true,
@@ -918,6 +949,7 @@ curl -X GET http://localhost:3000/api/admin \
 ```
 
 **Response (403 Forbidden):**
+
 ```json
 {
   "success": false,
@@ -934,6 +966,7 @@ curl -X GET http://localhost:3000/api/admin
 ```
 
 **Response (401 Unauthorized):**
+
 ```json
 {
   "success": false,
@@ -951,6 +984,7 @@ curl -X GET http://localhost:3000/api/admin \
 ```
 
 **Response (401 Unauthorized):**
+
 ```json
 {
   "success": false,
@@ -963,12 +997,14 @@ curl -X GET http://localhost:3000/api/admin \
 ### Log Examples
 
 **Allowed Access Log:**
+
 ```
 [INFO] Admin access granted: admin@travelmate.com (ADMIN)
 [INFO] Admin admin@travelmate.com fetched 20 users (page 1)
 ```
 
 **Denied Access Log:**
+
 ```
 [WARN] Access denied for user@example.com attempting to access /api/admin
 [WARN] Role USER not in allowed roles: [ADMIN]
@@ -979,6 +1015,7 @@ curl -X GET http://localhost:3000/api/admin \
 Adding new roles (like `EDITOR`, `SUPPORT`) is straightforward:
 
 1. **Update Prisma Schema:**
+
 ```prisma
 enum UserRole {
   USER
@@ -990,11 +1027,13 @@ enum UserRole {
 ```
 
 2. **Run Migration:**
+
 ```bash
 npx prisma migrate dev --name add_new_roles
 ```
 
 3. **Update Middleware Configuration:**
+
 ```typescript
 // middleware.ts
 const PROTECTED_ROUTES = [
@@ -1013,6 +1052,7 @@ const PROTECTED_ROUTES = [
 ```
 
 4. **Create Route Handlers:**
+
 ```typescript
 // app/api/content/route.ts
 // app/api/support/route.ts
@@ -1022,21 +1062,21 @@ const PROTECTED_ROUTES = [
 
 #### Why RBAC Matters
 
-| Benefit | Description |
-|---------|-------------|
-| **Least Privilege** | Users only access what they need, reducing risk |
-| **Audit Trail** | Role-based logging makes security auditing easier |
-| **Scalability** | Adding new roles/permissions is simple |
-| **Compliance** | Meets regulatory requirements (GDPR, HIPAA, SOC2) |
+| Benefit             | Description                                       |
+| ------------------- | ------------------------------------------------- |
+| **Least Privilege** | Users only access what they need, reducing risk   |
+| **Audit Trail**     | Role-based logging makes security auditing easier |
+| **Scalability**     | Adding new roles/permissions is simple            |
+| **Compliance**      | Meets regulatory requirements (GDPR, HIPAA, SOC2) |
 
 #### Security Risks if Middleware is Missing/Incorrect
 
-| Risk | Impact | Prevention |
-|------|--------|------------|
-| **Privilege Escalation** | Regular users access admin functions | Always verify roles server-side |
-| **Data Breach** | Unauthorized access to sensitive data | Implement defense in depth |
-| **Account Takeover** | Invalid tokens accepted | Validate JWT signatures and expiry |
-| **Broken Access Control** | OWASP Top 10 vulnerability | Test all role combinations |
+| Risk                      | Impact                                | Prevention                         |
+| ------------------------- | ------------------------------------- | ---------------------------------- |
+| **Privilege Escalation**  | Regular users access admin functions  | Always verify roles server-side    |
+| **Data Breach**           | Unauthorized access to sensitive data | Implement defense in depth         |
+| **Account Takeover**      | Invalid tokens accepted               | Validate JWT signatures and expiry |
+| **Broken Access Control** | OWASP Top 10 vulnerability            | Test all role combinations         |
 
 #### Best Practices Implemented
 
@@ -1058,13 +1098,13 @@ This application implements a comprehensive **Centralized Error Handling** syste
 
 ### Why Centralized Error Handling?
 
-| Benefit | Description |
-|---------|-------------|
-| **Consistency** | Every API endpoint returns errors in the same format |
-| **Security** | Sensitive details (stack traces, internal errors) are hidden in production |
-| **Debugging** | Structured logs make it easy to trace issues in monitoring tools |
-| **Developer Experience** | Clear error messages help developers debug faster |
-| **User Trust** | Users see friendly messages, not cryptic technical errors |
+| Benefit                  | Description                                                                |
+| ------------------------ | -------------------------------------------------------------------------- |
+| **Consistency**          | Every API endpoint returns errors in the same format                       |
+| **Security**             | Sensitive details (stack traces, internal errors) are hidden in production |
+| **Debugging**            | Structured logs make it easy to trace issues in monitoring tools           |
+| **Developer Experience** | Clear error messages help developers debug faster                          |
+| **User Trust**           | Users see friendly messages, not cryptic technical errors                  |
 
 ### Error Handling Architecture
 
@@ -1114,7 +1154,7 @@ interface StructuredLog {
   error?: {
     name: string;
     message: string;
-    stack?: string;  // Only in development
+    stack?: string; // Only in development
     code?: string;
   };
   request?: {
@@ -1126,25 +1166,43 @@ interface StructuredLog {
 }
 
 export const logger = {
-  info: (message: string, meta?: Record<string, unknown>) => { /* ... */ },
-  warn: (message: string, meta?: Record<string, unknown>) => { /* ... */ },
-  error: (message: string, error?: Error, request?: RequestContext) => { /* ... */ },
-  debug: (message: string, meta?: Record<string, unknown>) => { /* ... */ },
-  fatal: (message: string, error?: Error, request?: RequestContext) => { /* ... */ },
-  
+  info: (message: string, meta?: Record<string, unknown>) => {
+    /* ... */
+  },
+  warn: (message: string, meta?: Record<string, unknown>) => {
+    /* ... */
+  },
+  error: (message: string, error?: Error, request?: RequestContext) => {
+    /* ... */
+  },
+  debug: (message: string, meta?: Record<string, unknown>) => {
+    /* ... */
+  },
+  fatal: (message: string, error?: Error, request?: RequestContext) => {
+    /* ... */
+  },
+
   // Log with request context
   withRequest: (request: RequestContext) => ({
-    info: (message, meta) => { /* ... */ },
-    error: (message, error) => { /* ... */ },
+    info: (message, meta) => {
+      /* ... */
+    },
+    error: (message, error) => {
+      /* ... */
+    },
   }),
-  
+
   // Measure execution time
   time: (label: string) => ({
-    end: (meta) => { /* returns duration in ms */ },
+    end: (meta) => {
+      /* returns duration in ms */
+    },
   }),
-  
+
   // Log HTTP request/response
-  http: (method, path, status, duration, meta) => { /* ... */ },
+  http: (method, path, status, duration, meta) => {
+    /* ... */
+  },
 };
 ```
 
@@ -1210,7 +1268,7 @@ export function handleError(
 ): NextResponse {
   // 1. Normalize error to AppError
   let appError: AppError;
-  
+
   if (error instanceof AppError) {
     appError = error;
   } else if (error instanceof ZodError) {
@@ -1218,17 +1276,19 @@ export function handleError(
   } else if (error instanceof Prisma.PrismaClientKnownRequestError) {
     appError = handlePrismaError(error);
   } else if (error instanceof Error) {
-    appError = new AppError(error.message, 500, "E500", { isOperational: false });
+    appError = new AppError(error.message, 500, "E500", {
+      isOperational: false,
+    });
   }
-  
+
   // 2. Log the error (structured)
   logError(appError, context);
-  
+
   // 3. Create response based on environment
   if (IS_PRODUCTION) {
-    return createProdResponse(appError);  // Safe message only
+    return createProdResponse(appError); // Safe message only
   } else {
-    return createDevResponse(appError);   // Full details + stack
+    return createDevResponse(appError); // Full details + stack
   }
 }
 ```
@@ -1240,15 +1300,14 @@ export function handleError(
 
 export async function GET(request: NextRequest) {
   const context = { method: "GET", path: "/api/users", operation: "listUsers" };
-  
+
   try {
     const timer = logger.time("GET /api/users");
-    
+
     const users = await prisma.user.findMany();
-    
+
     timer.end({ usersCount: users.length });
     return sendSuccess(users);
-    
   } catch (error) {
     // All errors handled consistently
     return handleError(error, context);
@@ -1256,20 +1315,23 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const context = { method: "POST", path: "/api/users", operation: "createUser" };
-  
+  const context = {
+    method: "POST",
+    path: "/api/users",
+    operation: "createUser",
+  };
+
   try {
     const { email } = await request.json();
-    
+
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
       // Throw custom error
       throw new ConflictError("User with this email already exists");
     }
-    
+
     const user = await prisma.user.create({ data: { email } });
     return sendSuccess(user, "User created", 201);
-    
   } catch (error) {
     return handleError(error, context);
   }
@@ -1285,6 +1347,7 @@ curl -X GET "http://localhost:3000/api/users?_simulate_error=true"
 ```
 
 **Response (Development):**
+
 ```json
 {
   "success": false,
@@ -1308,6 +1371,7 @@ curl -X GET "http://localhost:3000/api/users?_simulate_error=true"
 ```
 
 **Response (Production):**
+
 ```json
 {
   "success": false,
@@ -1322,6 +1386,7 @@ curl -X GET "http://localhost:3000/api/users?_simulate_error=true"
 ### Console Log Output
 
 **Development (Human-Readable):**
+
 ```
 [2026-01-21T12:00:00.000Z] [ERROR] Error in GET /api/users: Simulated database connection failure!
 Stack trace: Error: Simulated database connection failure!
@@ -1330,6 +1395,7 @@ Stack trace: Error: Simulated database connection failure!
 ```
 
 **Production (JSON Structured):**
+
 ```json
 {
   "level": "error",
@@ -1351,20 +1417,21 @@ Stack trace: Error: Simulated database connection failure!
 
 ### Error Codes Reference
 
-| Code Range | Category | Examples |
-|------------|----------|----------|
-| E1XX | Client Errors | E100 (Validation), E101 (Bad Request) |
-| E2XX | Auth Errors | E200 (Unauthorized), E201 (Forbidden) |
-| E3XX | Resource Errors | E300 (Not Found), E301 (Conflict) |
-| E4XX | Business Logic | E400 (Rule Violation), E403 (Insufficient Permissions) |
-| E5XX | Server Errors | E500 (Internal), E501 (Database) |
-| E6XX | Domain-Specific | E600 (User), E610 (Place), E620 (Trip) |
+| Code Range | Category        | Examples                                               |
+| ---------- | --------------- | ------------------------------------------------------ |
+| E1XX       | Client Errors   | E100 (Validation), E101 (Bad Request)                  |
+| E2XX       | Auth Errors     | E200 (Unauthorized), E201 (Forbidden)                  |
+| E3XX       | Resource Errors | E300 (Not Found), E301 (Conflict)                      |
+| E4XX       | Business Logic  | E400 (Rule Violation), E403 (Insufficient Permissions) |
+| E5XX       | Server Errors   | E500 (Internal), E501 (Database)                       |
+| E6XX       | Domain-Specific | E600 (User), E610 (Place), E620 (Trip)                 |
 
 ### Scaling to Production Monitoring
 
 The structured JSON logging format is designed to integrate with cloud monitoring tools:
 
 **AWS CloudWatch Integration:**
+
 ```typescript
 // The JSON logs can be parsed by CloudWatch Logs Insights
 // Query example:
@@ -1374,21 +1441,23 @@ The structured JSON logging format is designed to integrate with cloud monitorin
 ```
 
 **ELK Stack (Elasticsearch, Logstash, Kibana):**
+
 - JSON logs can be ingested directly by Logstash
 - Create dashboards in Kibana for error tracking
 
 **Datadog/New Relic:**
+
 - Forward structured logs for APM integration
 - Set up alerts based on error rates
 
 ### Security Reflection
 
-| Risk | Without Error Handler | With Error Handler |
-|------|----------------------|-------------------|
-| **Stack Trace Exposure** | Full stack traces visible to attackers | Hidden in production |
-| **Database Error Details** | SQL/Prisma errors expose schema | Generic "Database error" message |
-| **Internal Paths** | File paths reveal server structure | Only error codes returned |
-| **Error Rate Spikes** | Difficult to detect | Structured logs enable alerting |
+| Risk                       | Without Error Handler                  | With Error Handler               |
+| -------------------------- | -------------------------------------- | -------------------------------- |
+| **Stack Trace Exposure**   | Full stack traces visible to attackers | Hidden in production             |
+| **Database Error Details** | SQL/Prisma errors expose schema        | Generic "Database error" message |
+| **Internal Paths**         | File paths reveal server structure     | Only error codes returned        |
+| **Error Rate Spikes**      | Difficult to detect                    | Structured logs enable alerting  |
 
 ### Best Practices Implemented
 
@@ -1448,25 +1517,25 @@ app/
 
 ### RESTful Naming Conventions
 
-| Convention | Implementation |
-|------------|----------------|
-| **Plural Nouns** | `/api/users`, `/api/places`, `/api/trips` |
-| **Resource IDs** | `/api/users/[id]`, `/api/places/[id]` |
-| **HTTP Methods** | GET (read), POST (create), PUT (update), DELETE (remove) |
-| **Query Parameters** | Filtering, sorting, pagination |
-| **Status Codes** | 200, 201, 400, 404, 409, 500 |
+| Convention           | Implementation                                           |
+| -------------------- | -------------------------------------------------------- |
+| **Plural Nouns**     | `/api/users`, `/api/places`, `/api/trips`                |
+| **Resource IDs**     | `/api/users/[id]`, `/api/places/[id]`                    |
+| **HTTP Methods**     | GET (read), POST (create), PUT (update), DELETE (remove) |
+| **Query Parameters** | Filtering, sorting, pagination                           |
+| **Status Codes**     | 200, 201, 400, 404, 409, 500                             |
 
 ### API Endpoints Reference
 
 #### Users API (`/api/users`)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/users` | List all users with pagination |
-| POST | `/api/users` | Create a new user |
-| GET | `/api/users/[id]` | Get a specific user |
-| PUT | `/api/users/[id]` | Update a user |
-| DELETE | `/api/users/[id]` | Delete (soft) a user |
+| Method | Endpoint          | Description                    |
+| ------ | ----------------- | ------------------------------ |
+| GET    | `/api/users`      | List all users with pagination |
+| POST   | `/api/users`      | Create a new user              |
+| GET    | `/api/users/[id]` | Get a specific user            |
+| PUT    | `/api/users/[id]` | Update a user                  |
+| DELETE | `/api/users/[id]` | Delete (soft) a user           |
 
 **Sample Requests:**
 
@@ -1492,6 +1561,7 @@ curl -X DELETE http://localhost:3000/api/users/abc123-uuid
 ```
 
 **Sample Response (GET /api/users):**
+
 ```json
 {
   "success": true,
@@ -1524,13 +1594,13 @@ curl -X DELETE http://localhost:3000/api/users/abc123-uuid
 
 #### Places API (`/api/places`)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/places` | List all places with filters |
-| POST | `/api/places` | Create a new place |
-| GET | `/api/places/[id]` | Get place details |
-| PUT | `/api/places/[id]` | Update a place |
-| DELETE | `/api/places/[id]` | Delete (soft) a place |
+| Method | Endpoint           | Description                  |
+| ------ | ------------------ | ---------------------------- |
+| GET    | `/api/places`      | List all places with filters |
+| POST   | `/api/places`      | Create a new place           |
+| GET    | `/api/places/[id]` | Get place details            |
+| PUT    | `/api/places/[id]` | Update a place               |
+| DELETE | `/api/places/[id]` | Delete (soft) a place        |
 
 **Sample Requests:**
 
@@ -1563,13 +1633,13 @@ curl -X POST http://localhost:3000/api/places \
 
 #### Trips API (`/api/trips`)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/trips` | List all trips |
-| POST | `/api/trips` | Create a new trip |
-| GET | `/api/trips/[id]` | Get trip details with places |
-| PUT | `/api/trips/[id]` | Update a trip |
-| DELETE | `/api/trips/[id]` | Cancel a trip |
+| Method | Endpoint          | Description                  |
+| ------ | ----------------- | ---------------------------- |
+| GET    | `/api/trips`      | List all trips               |
+| POST   | `/api/trips`      | Create a new trip            |
+| GET    | `/api/trips/[id]` | Get trip details with places |
+| PUT    | `/api/trips/[id]` | Update a trip                |
+| DELETE | `/api/trips/[id]` | Cancel a trip                |
 
 **Sample Requests:**
 
@@ -1585,13 +1655,13 @@ curl -X POST http://localhost:3000/api/trips \
 
 #### Reviews API (`/api/reviews`)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/reviews` | List all reviews |
-| POST | `/api/reviews` | Create a new review |
-| GET | `/api/reviews/[id]` | Get review details |
-| PUT | `/api/reviews/[id]` | Update a review |
-| DELETE | `/api/reviews/[id]` | Delete a review |
+| Method | Endpoint            | Description         |
+| ------ | ------------------- | ------------------- |
+| GET    | `/api/reviews`      | List all reviews    |
+| POST   | `/api/reviews`      | Create a new review |
+| GET    | `/api/reviews/[id]` | Get review details  |
+| PUT    | `/api/reviews/[id]` | Update a review     |
+| DELETE | `/api/reviews/[id]` | Delete a review     |
 
 **Sample Requests:**
 
@@ -1607,13 +1677,13 @@ curl -X POST http://localhost:3000/api/reviews \
 
 #### Categories API (`/api/categories`)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/categories` | List all categories |
-| POST | `/api/categories` | Create a category |
-| GET | `/api/categories/[id]` | Get category with places |
-| PUT | `/api/categories/[id]` | Update a category |
-| DELETE | `/api/categories/[id]` | Delete a category |
+| Method | Endpoint               | Description              |
+| ------ | ---------------------- | ------------------------ |
+| GET    | `/api/categories`      | List all categories      |
+| POST   | `/api/categories`      | Create a category        |
+| GET    | `/api/categories/[id]` | Get category with places |
+| PUT    | `/api/categories/[id]` | Update a category        |
+| DELETE | `/api/categories/[id]` | Delete a category        |
 
 **Sample Requests:**
 
@@ -1629,13 +1699,13 @@ curl -X POST http://localhost:3000/api/categories \
 
 #### Bookings API (`/api/bookings`)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/bookings` | List all bookings |
-| POST | `/api/bookings` | Create a new booking |
-| GET | `/api/bookings/[id]` | Get booking with payments |
-| PUT | `/api/bookings/[id]` | Update a booking |
-| DELETE | `/api/bookings/[id]` | Cancel a booking |
+| Method | Endpoint             | Description               |
+| ------ | -------------------- | ------------------------- |
+| GET    | `/api/bookings`      | List all bookings         |
+| POST   | `/api/bookings`      | Create a new booking      |
+| GET    | `/api/bookings/[id]` | Get booking with payments |
+| PUT    | `/api/bookings/[id]` | Update a booking          |
+| DELETE | `/api/bookings/[id]` | Cancel a booking          |
 
 **Sample Requests:**
 
@@ -1691,27 +1761,32 @@ All list endpoints support pagination:
 ```
 
 **Pagination Parameters:**
+
 - `page`: Current page number (default: 1)
 - `limit`: Items per page (default: 10, max: 100)
 
 ### Why Consistent API Structure Matters
 
 #### 1. **Frontend Integration**
+
 - Predictable endpoints reduce guesswork
 - Consistent response formats simplify data handling
 - Unified error handling across all API calls
 
 #### 2. **Team Collaboration**
+
 - Self-documenting API structure
 - Easy onboarding for new developers
 - Clear contract between frontend and backend
 
 #### 3. **Scalability**
+
 - Easy to add new resources following the pattern
 - Consistent patterns for authentication/authorization
 - Predictable caching strategies
 
 #### 4. **Maintenance**
+
 - Bugs are easier to find and fix
 - Code reviews are faster
 - Testing is more straightforward
@@ -1744,20 +1819,22 @@ Every API response follows this standardized envelope structure:
 
 ```typescript
 interface ApiResponse<T = unknown> {
-  success: boolean;      // Operation result indicator
-  message: string;       // Human-readable status message
-  data?: T;              // Response payload (optional on errors)
-  error?: {              // Error details (only on failures)
-    code: string;        // Machine-readable error code
-    details?: unknown;   // Additional error context
+  success: boolean; // Operation result indicator
+  message: string; // Human-readable status message
+  data?: T; // Response payload (optional on errors)
+  error?: {
+    // Error details (only on failures)
+    code: string; // Machine-readable error code
+    details?: unknown; // Additional error context
   };
-  timestamp: string;     // ISO 8601 timestamp
+  timestamp: string; // ISO 8601 timestamp
 }
 ```
 
 ### Response Examples
 
 **Success Response:**
+
 ```json
 {
   "success": true,
@@ -1773,6 +1850,7 @@ interface ApiResponse<T = unknown> {
 ```
 
 **Paginated Response:**
+
 ```json
 {
   "success": true,
@@ -1795,6 +1873,7 @@ interface ApiResponse<T = unknown> {
 ```
 
 **Error Response:**
+
 ```json
 {
   "success": false,
@@ -1808,6 +1887,7 @@ interface ApiResponse<T = unknown> {
 ```
 
 **Validation Error Response:**
+
 ```json
 {
   "success": false,
@@ -1827,73 +1907,77 @@ interface ApiResponse<T = unknown> {
 
 The response handler provides convenient helper functions:
 
-| Function | HTTP Status | Use Case |
-|----------|-------------|----------|
-| `sendSuccess(data, message, status)` | 200/201 | Successful operations |
-| `sendPaginatedSuccess(data, pagination, message, filters)` | 200 | List responses with pagination |
-| `sendError(message, code, status, details)` | 4XX/5XX | Generic error responses |
-| `sendValidationError(fieldErrors)` | 400 | Input validation failures |
-| `sendNotFound(resource, code)` | 404 | Resource not found |
-| `sendConflict(message, code)` | 409 | Duplicate/conflict errors |
-| `sendBadRequest(message, code, details)` | 400 | Invalid request errors |
-| `sendUnauthorized(message)` | 401 | Authentication required |
-| `sendForbidden(message)` | 403 | Insufficient permissions |
-| `sendInternalError(message, details)` | 500 | Server-side errors |
-| `sendDatabaseError(message, details)` | 500 | Database operation failures |
+| Function                                                   | HTTP Status | Use Case                       |
+| ---------------------------------------------------------- | ----------- | ------------------------------ |
+| `sendSuccess(data, message, status)`                       | 200/201     | Successful operations          |
+| `sendPaginatedSuccess(data, pagination, message, filters)` | 200         | List responses with pagination |
+| `sendError(message, code, status, details)`                | 4XX/5XX     | Generic error responses        |
+| `sendValidationError(fieldErrors)`                         | 400         | Input validation failures      |
+| `sendNotFound(resource, code)`                             | 404         | Resource not found             |
+| `sendConflict(message, code)`                              | 409         | Duplicate/conflict errors      |
+| `sendBadRequest(message, code, details)`                   | 400         | Invalid request errors         |
+| `sendUnauthorized(message)`                                | 401         | Authentication required        |
+| `sendForbidden(message)`                                   | 403         | Insufficient permissions       |
+| `sendInternalError(message, details)`                      | 500         | Server-side errors             |
+| `sendDatabaseError(message, details)`                      | 500         | Database operation failures    |
 
 ### Error Codes Dictionary
 
 Error codes are defined in `lib/errorCodes.ts` for consistent error identification:
 
-| Code Range | Category | Examples |
-|------------|----------|----------|
-| E1XX | Client Errors | E100 (Validation), E101 (Bad Request) |
-| E2XX | Auth Errors | E200 (Unauthorized), E201 (Forbidden) |
-| E3XX | Resource Errors | E300 (Not Found), E301 (Conflict) |
-| E4XX | Business Logic | E400 (Rule Violation), E402 (Limit Exceeded) |
-| E5XX | Server Errors | E500 (Internal), E501 (Database) |
-| E6XX | Domain-Specific | E600-E658 (Entity-specific errors) |
+| Code Range | Category        | Examples                                     |
+| ---------- | --------------- | -------------------------------------------- |
+| E1XX       | Client Errors   | E100 (Validation), E101 (Bad Request)        |
+| E2XX       | Auth Errors     | E200 (Unauthorized), E201 (Forbidden)        |
+| E3XX       | Resource Errors | E300 (Not Found), E301 (Conflict)            |
+| E4XX       | Business Logic  | E400 (Rule Violation), E402 (Limit Exceeded) |
+| E5XX       | Server Errors   | E500 (Internal), E501 (Database)             |
+| E6XX       | Domain-Specific | E600-E658 (Entity-specific errors)           |
 
 **Domain-Specific Error Codes:**
 
-| Entity | Not Found | CRUD Errors | Other |
-|--------|-----------|-------------|-------|
-| User | E600 | E601-E604 | E605 (Duplicate Email) |
-| Place | E610 | E611-E614 | E615 (Duplicate Slug) |
-| Trip | E620 | E621-E624 | - |
-| Review | E630 | E631-E634 | E635 (Duplicate), E636 (Invalid Rating) |
-| Category | E640 | E641-E644 | E645 (Duplicate), E646 (Has Places) |
-| Booking | E650 | E651-E654 | E656-E658 (Date/Status errors) |
+| Entity   | Not Found | CRUD Errors | Other                                   |
+| -------- | --------- | ----------- | --------------------------------------- |
+| User     | E600      | E601-E604   | E605 (Duplicate Email)                  |
+| Place    | E610      | E611-E614   | E615 (Duplicate Slug)                   |
+| Trip     | E620      | E621-E624   | -                                       |
+| Review   | E630      | E631-E634   | E635 (Duplicate), E636 (Invalid Rating) |
+| Category | E640      | E641-E644   | E645 (Duplicate), E646 (Has Places)     |
+| Booking  | E650      | E651-E654   | E656-E658 (Date/Status errors)          |
 
 ### Usage Example
 
 ```typescript
 // In your API route handler
-import { sendSuccess, sendNotFound, sendValidationError } from "@/lib/responseHandler";
+import {
+  sendSuccess,
+  sendNotFound,
+  sendValidationError,
+} from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
-  
+
   const user = await prisma.user.findUnique({ where: { id } });
-  
+
   if (!user) {
     return sendNotFound("User not found", ERROR_CODES.USER_NOT_FOUND);
   }
-  
+
   return sendSuccess(user, "User fetched successfully");
 }
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  
+
   if (!body.email || !body.name) {
     return sendValidationError({
       email: !body.email ? "Email is required" : null,
       name: !body.name ? "Name is required" : null,
     });
   }
-  
+
   const user = await prisma.user.create({ data: body });
   return sendSuccess(user, "User created successfully", 201);
 }
@@ -1954,6 +2038,7 @@ npx prisma init --datasource-provider postgresql
 ```
 
 This creates:
+
 - `/prisma/schema.prisma` - Database schema definition
 - `.env` file with `DATABASE_URL` placeholder
 
@@ -1966,6 +2051,7 @@ DATABASE_URL="postgresql://postgres:postgres123@localhost:5432/travelmate_db"
 ```
 
 For Docker environments:
+
 ```env
 DATABASE_URL="postgresql://postgres:postgres123@db:5432/travelmate_db"
 ```
@@ -2008,7 +2094,7 @@ model Place {
   rating      Decimal  @default(0) @db.Decimal(2, 1)
   categoryId  String   @db.Uuid
   category    Category @relation(fields: [categoryId], references: [id])
-  
+
   reviews     Review[]
   favorites   Favorite[]
 }
@@ -2042,6 +2128,7 @@ export default prisma;
 ```
 
 **Why this pattern?**
+
 - **Singleton Pattern**: Prevents multiple PrismaClient instances during development hot-reloads
 - **Conditional Logging**: Verbose logging in development, minimal in production
 - **Global Caching**: Client survives Next.js hot module replacement
@@ -2097,16 +2184,16 @@ const stats = await getDatabaseStats();
 
 ### Common Prisma Commands
 
-| Command | Description |
-|---------|-------------|
-| `npx prisma generate` | Generate Prisma Client |
-| `npx prisma migrate dev --name <name>` | Create and apply migration |
-| `npx prisma migrate reset` | Reset database (deletes all data) |
-| `npx prisma db push` | Push schema changes without migration |
-| `npx prisma db seed` | Run seed script |
-| `npx prisma studio` | Open visual database editor |
-| `npx prisma format` | Format schema file |
-| `npm run db:test` | Run database connection test |
+| Command                                | Description                           |
+| -------------------------------------- | ------------------------------------- |
+| `npx prisma generate`                  | Generate Prisma Client                |
+| `npx prisma migrate dev --name <name>` | Create and apply migration            |
+| `npx prisma migrate reset`             | Reset database (deletes all data)     |
+| `npx prisma db push`                   | Push schema changes without migration |
+| `npx prisma db seed`                   | Run seed script                       |
+| `npx prisma studio`                    | Open visual database editor           |
+| `npx prisma format`                    | Format schema file                    |
+| `npm run db:test`                      | Run database connection test          |
 
 ### Connection Test Output
 
@@ -2163,36 +2250,42 @@ Access Prisma Studio at `http://localhost:5555` after running `npm run db:studio
 
 ![Prisma Studio](docs/screenshots/prisma-studio.png)
 
-*Prisma Studio provides a visual interface to browse and edit database records.*
+_Prisma Studio provides a visual interface to browse and edit database records._
 
 ### Benefits of Prisma in This Project
 
 1. **Type-Safe Queries**
+
    ```typescript
    // Auto-completed, type-checked query
    const user = await prisma.user.findUnique({
      where: { email: "user@example.com" },
-     include: { reviews: true, favorites: true }
+     include: { reviews: true, favorites: true },
    });
    // user is fully typed with reviews and favorites
    ```
 
 2. **Relation Handling**
+
    ```typescript
    // Easy nested queries
    const placesWithReviews = await prisma.place.findMany({
      include: {
        category: true,
-       reviews: { where: { status: "APPROVED" } }
-     }
+       reviews: { where: { status: "APPROVED" } },
+     },
    });
    ```
 
 3. **Transaction Support**
+
    ```typescript
    await prisma.$transaction([
      prisma.review.create({ data: reviewData }),
-     prisma.place.update({ where: { id: placeId }, data: { reviewCount: { increment: 1 } } })
+     prisma.place.update({
+       where: { id: placeId },
+       data: { reviewCount: { increment: 1 } },
+     }),
    ]);
    ```
 
@@ -2271,11 +2364,13 @@ model User {
 ```
 
 Run:
+
 ```bash
 npx prisma migrate dev --name add_user_phone_number
 ```
 
 Output:
+
 ```
 Applying migration `20251229075620_add_user_phone_number`
 
@@ -2289,6 +2384,7 @@ Your database is now in sync with your schema.
 ```
 
 Generated SQL:
+
 ```sql
 -- AlterTable
 ALTER TABLE "users" ADD COLUMN "phoneNumber" VARCHAR(20);
@@ -2301,6 +2397,7 @@ npx prisma migrate status
 ```
 
 Output:
+
 ```
 2 migrations found in prisma/migrations
 Database schema is up to date!
@@ -2333,6 +2430,7 @@ The seed script (`prisma/seed.ts`) populates initial data using **idempotent ope
 #### Key Features
 
 1. **Upsert Operations** - Won't create duplicates:
+
    ```typescript
    prisma.category.upsert({
      where: { slug: "landmarks" },
@@ -2342,7 +2440,7 @@ The seed script (`prisma/seed.ts`) populates initial data using **idempotent ope
        slug: "landmarks",
        description: "Famous monuments and landmarks",
      },
-   })
+   });
    ```
 
 2. **Skip Duplicates** - For bulk inserts:
@@ -2360,6 +2458,7 @@ npx prisma db seed
 ```
 
 Output:
+
 ```
 🌱 Starting database seeding...
 📁 Creating categories...
@@ -2400,18 +2499,19 @@ Output:
 
 Running seed multiple times produces the same result (no duplicates):
 
-| Entity | After 1st Seed | After 2nd Seed |
-|--------|----------------|----------------|
-| Users | 4 | 4 |
-| Categories | 6 | 6 |
-| Places | 6 | 6 |
-| Reviews | 4 | 4 |
+| Entity     | After 1st Seed | After 2nd Seed |
+| ---------- | -------------- | -------------- |
+| Users      | 4              | 4              |
+| Categories | 6              | 6              |
+| Places     | 6              | 6              |
+| Reviews    | 4              | 4              |
 
 ### Production Data Protection
 
 #### Before Running Migrations in Production:
 
 1. **Create Database Backup**
+
    ```bash
    pg_dump -h localhost -U postgres travelmate_db > backup_$(date +%Y%m%d).sql
    ```
@@ -2433,13 +2533,13 @@ Running seed multiple times produces the same result (no duplicates):
 
 ### NPM Scripts for Migrations
 
-| Script | Command | Description |
-|--------|---------|-------------|
-| `npm run db:migrate` | `prisma migrate dev` | Create & apply migration (dev) |
-| `npm run db:push` | `prisma db push` | Push schema without migration |
-| `npm run db:seed` | `prisma db seed` | Run seed script |
-| `npm run db:reset` | `prisma migrate reset` | Reset DB & re-seed |
-| `npm run db:studio` | `prisma studio` | Open visual editor |
+| Script               | Command                | Description                    |
+| -------------------- | ---------------------- | ------------------------------ |
+| `npm run db:migrate` | `prisma migrate dev`   | Create & apply migration (dev) |
+| `npm run db:push`    | `prisma db push`       | Push schema without migration  |
+| `npm run db:seed`    | `prisma db seed`       | Run seed script                |
+| `npm run db:reset`   | `prisma migrate reset` | Reset DB & re-seed             |
+| `npm run db:studio`  | `prisma studio`        | Open visual editor             |
 
 ### Migration Best Practices
 
@@ -2551,19 +2651,19 @@ This project uses **Prisma ORM** with a normalized PostgreSQL database schema fo
 
 ### Database Models
 
-| Model | Description | Key Fields |
-|-------|-------------|------------|
-| **User** | Application users with roles | email (unique), role (USER/ADMIN/MODERATOR) |
-| **Category** | Travel destination categories | slug (unique), sortOrder |
-| **Place** | Travel destinations | slug (unique), coordinates, rating, categoryId |
-| **PlaceImage** | Multiple images per place | url, isPrimary, sortOrder |
-| **Amenity** | Available amenities | name (unique), icon |
-| **PlaceAmenity** | Junction table (Place ↔ Amenity) | placeId, amenityId (unique pair) |
-| **Review** | User reviews for places | rating (1-5), status (PENDING/APPROVED/REJECTED) |
-| **Favorite** | User's favorite places | userId, placeId (unique pair) |
-| **Trip** | User trip itineraries | status (PLANNING/UPCOMING/IN_PROGRESS/COMPLETED/CANCELLED) |
-| **TripPlace** | Places in a trip | visitOrder, duration, notes |
-| **TripMember** | Trip collaborators | role (owner/editor/viewer) |
+| Model            | Description                      | Key Fields                                                 |
+| ---------------- | -------------------------------- | ---------------------------------------------------------- |
+| **User**         | Application users with roles     | email (unique), role (USER/ADMIN/MODERATOR)                |
+| **Category**     | Travel destination categories    | slug (unique), sortOrder                                   |
+| **Place**        | Travel destinations              | slug (unique), coordinates, rating, categoryId             |
+| **PlaceImage**   | Multiple images per place        | url, isPrimary, sortOrder                                  |
+| **Amenity**      | Available amenities              | name (unique), icon                                        |
+| **PlaceAmenity** | Junction table (Place ↔ Amenity) | placeId, amenityId (unique pair)                           |
+| **Review**       | User reviews for places          | rating (1-5), status (PENDING/APPROVED/REJECTED)           |
+| **Favorite**     | User's favorite places           | userId, placeId (unique pair)                              |
+| **Trip**         | User trip itineraries            | status (PLANNING/UPCOMING/IN_PROGRESS/COMPLETED/CANCELLED) |
+| **TripPlace**    | Places in a trip                 | visitOrder, duration, notes                                |
+| **TripMember**   | Trip collaborators               | role (owner/editor/viewer)                                 |
 
 ### Enums
 
@@ -2593,11 +2693,11 @@ enum ReviewStatus {
 
 The schema follows **Third Normal Form (3NF)**:
 
-| Normal Form | Applied Rule | Example |
-|-------------|--------------|---------|
-| **1NF** | Atomic values, no repeating groups | Place amenities in separate `PlaceAmenity` table |
-| **2NF** | No partial dependencies | All non-key fields depend on entire primary key |
-| **3NF** | No transitive dependencies | Category data stored in `Category` table, not duplicated in `Place` |
+| Normal Form | Applied Rule                       | Example                                                             |
+| ----------- | ---------------------------------- | ------------------------------------------------------------------- |
+| **1NF**     | Atomic values, no repeating groups | Place amenities in separate `PlaceAmenity` table                    |
+| **2NF**     | No partial dependencies            | All non-key fields depend on entire primary key                     |
+| **3NF**     | No transitive dependencies         | Category data stored in `Category` table, not duplicated in `Place` |
 
 ### Indexes
 
@@ -2648,6 +2748,7 @@ npx prisma db pull
 ### Seed Data
 
 The seed script (`prisma/seed.ts`) populates:
+
 - 6 Categories (Landmarks, Nature, Beaches, Museums, Adventure, Historical)
 - 8 Amenities (WiFi, Parking, Restaurant, etc.)
 - 4 Users (Admin, Moderator, 2 Regular users)
@@ -2680,12 +2781,12 @@ docker-compose up --build -d
 
 ### Accessing Services
 
-| Service    | URL/Port                    | Description                    |
-| ---------- | --------------------------- | ------------------------------ |
-| App        | http://localhost:3000       | Next.js application            |
-| PostgreSQL | localhost:5432              | Database (user: postgres)      |
-| Redis      | localhost:6379              | Cache server                   |
-| Health API | http://localhost:3000/api/health | Health check endpoint      |
+| Service    | URL/Port                         | Description               |
+| ---------- | -------------------------------- | ------------------------- |
+| App        | http://localhost:3000            | Next.js application       |
+| PostgreSQL | localhost:5432                   | Database (user: postgres) |
+| Redis      | localhost:6379                   | Cache server              |
+| Health API | http://localhost:3000/api/health | Health check endpoint     |
 
 ### Docker Files Overview
 
@@ -2699,6 +2800,7 @@ docker-compose up --build -d
 ```
 
 **Key features:**
+
 - Uses `node:20-alpine` as base image for small footprint (~150MB)
 - Multi-stage build reduces final image size
 - Runs as non-root user for security
@@ -2716,16 +2818,16 @@ docker-compose up --build -d
 
 ```yaml
 services:
-  app:        # Next.js container (port 3000)
-  db:         # PostgreSQL 16 (port 5432)
-  redis:      # Redis 7 (port 6379)
+  app: # Next.js container (port 3000)
+  db: # PostgreSQL 16 (port 5432)
+  redis: # Redis 7 (port 6379)
 
 networks:
-  travel-mate-network:  # Shared bridge network
+  travel-mate-network: # Shared bridge network
 
 volumes:
-  postgres_data:        # Persistent database storage
-  redis_data:           # Persistent cache storage
+  postgres_data: # Persistent database storage
+  redis_data: # Persistent cache storage
 ```
 
 ### Network Configuration
@@ -2751,11 +2853,11 @@ All services communicate over a shared bridge network (`travel-mate-network`):
 
 ### Volume Mounts
 
-| Volume               | Purpose                                    |
-| -------------------- | ------------------------------------------ |
-| `postgres_data`      | Persists database data across restarts     |
-| `redis_data`         | Persists Redis cache data                  |
-| `./init-db`          | SQL scripts run on first DB initialization |
+| Volume          | Purpose                                    |
+| --------------- | ------------------------------------------ |
+| `postgres_data` | Persists database data across restarts     |
+| `redis_data`    | Persists Redis cache data                  |
+| `./init-db`     | SQL scripts run on first DB initialization |
 
 ### Environment Variables
 
@@ -2809,6 +2911,7 @@ docker-compose -f docker-compose.dev.yml up --build
 ### Troubleshooting
 
 #### Port Already in Use
+
 ```bash
 # Check what's using the port
 netstat -ano | findstr :3000
@@ -2817,6 +2920,7 @@ netstat -ano | findstr :3000
 ```
 
 #### Database Connection Issues
+
 ```bash
 # Check if database is healthy
 docker-compose exec db pg_isready -U postgres
@@ -2826,12 +2930,14 @@ docker-compose logs db
 ```
 
 #### Permission Issues (Linux/Mac)
+
 ```bash
 # Fix volume permissions
 sudo chown -R $USER:$USER ./
 ```
 
 #### Rebuilding After Code Changes
+
 ```bash
 # Force rebuild without cache
 docker-compose build --no-cache
@@ -2882,14 +2988,14 @@ A transaction ensures that multiple database operations either all succeed or al
 
 #### Transaction Scenarios Used
 
-| Transaction | Purpose | Operations |
-|------------|---------|------------|
-| `createBookingWithPayment` | Create booking and payment atomically | Create booking → Create payment → Update booking status |
-| `createTripWithPlaces` | Create trip with all associated places | Create trip → Add member → Add all places |
-| `processPayment` | Process payment and update booking | Validate payment → Update payment status → Update booking status |
-| `cancelBookingWithRefund` | Cancel booking and refund payments | Find booking → Update payments to refunded → Cancel booking |
-| `transferTripOwnership` | Transfer ownership between users | Verify owner → Update trip → Update member roles |
-| `bulkUpdatePlaceRatings` | Batch update place ratings from reviews | Aggregate reviews → Update multiple places |
+| Transaction                | Purpose                                 | Operations                                                       |
+| -------------------------- | --------------------------------------- | ---------------------------------------------------------------- |
+| `createBookingWithPayment` | Create booking and payment atomically   | Create booking → Create payment → Update booking status          |
+| `createTripWithPlaces`     | Create trip with all associated places  | Create trip → Add member → Add all places                        |
+| `processPayment`           | Process payment and update booking      | Validate payment → Update payment status → Update booking status |
+| `cancelBookingWithRefund`  | Cancel booking and refund payments      | Find booking → Update payments to refunded → Cancel booking      |
+| `transferTripOwnership`    | Transfer ownership between users        | Verify owner → Update trip → Update member roles                 |
+| `bulkUpdatePlaceRatings`   | Batch update place ratings from reviews | Aggregate reviews → Update multiple places                       |
 
 #### Transaction Implementation Example
 
@@ -2932,13 +3038,13 @@ All transactions are wrapped in try-catch blocks with proper logging:
 ```typescript
 try {
   await prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({ data: { name: 'Alice' } });
+    const user = await tx.user.create({ data: { name: "Alice" } });
     await tx.order.create({
       data: { userId: user.id, total: 500 },
     });
   });
 } catch (error) {
-  logger.error('Transaction failed. Rolling back.', { error: error.message });
+  logger.error("Transaction failed. Rolling back.", { error: error.message });
 }
 ```
 
@@ -2974,7 +3080,7 @@ async demonstrateRollback() {
 ```typescript
 // ❌ INEFFICIENT - Fetches all fields and relations
 const users = await prisma.user.findMany({
-  include: { reviews: true, favorites: true, trips: true }
+  include: { reviews: true, favorites: true, trips: true },
 });
 
 // ✅ OPTIMIZED - Select only what's needed
@@ -2994,9 +3100,9 @@ const users = await prisma.user.findMany({
 // ✅ OPTIMIZED - Single query for bulk insert
 await prisma.user.createMany({
   data: [
-    { name: 'Alice', email: 'alice@test.com' },
-    { name: 'Bob', email: 'bob@test.com' },
-    { name: 'Charlie', email: 'charlie@test.com' },
+    { name: "Alice", email: "alice@test.com" },
+    { name: "Bob", email: "bob@test.com" },
+    { name: "Charlie", email: "charlie@test.com" },
   ],
   skipDuplicates: true,
 });
@@ -3009,7 +3115,7 @@ await prisma.user.createMany({
 const users = await prisma.user.findMany({
   skip: (page - 1) * pageSize,
   take: pageSize,
-  orderBy: { createdAt: 'desc' },
+  orderBy: { createdAt: "desc" },
 });
 ```
 
@@ -3107,9 +3213,10 @@ Query logging is enabled in development mode:
 ```typescript
 // lib/prisma.ts
 export const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === 'development'
-    ? ['query', 'info', 'warn', 'error']
-    : ['error'],
+  log:
+    process.env.NODE_ENV === "development"
+      ? ["query", "info", "warn", "error"]
+      : ["error"],
 });
 ```
 
@@ -3164,14 +3271,14 @@ GET /api/query-optimization?action=explain&table=places&condition=is_featured=tr
 
 ### 6. Anti-Patterns Avoided
 
-| Anti-Pattern | Problem | Solution Used |
-|-------------|---------|---------------|
-| **N+1 Queries** | Loop executes N additional queries | Use `include` with `select` |
-| **Over-fetching** | Retrieving unused fields | Use `select` to specify fields |
-| **Full Table Scans** | Slow queries on large tables | Add indexes on filtered columns |
-| **Non-atomic Operations** | Data inconsistency on partial failure | Use `$transaction()` |
-| **Unbounded Queries** | Memory issues, slow responses | Always use pagination |
-| **Sequential Queries** | Unnecessary wait time | Use `Promise.all()` for independent queries |
+| Anti-Pattern              | Problem                               | Solution Used                               |
+| ------------------------- | ------------------------------------- | ------------------------------------------- |
+| **N+1 Queries**           | Loop executes N additional queries    | Use `include` with `select`                 |
+| **Over-fetching**         | Retrieving unused fields              | Use `select` to specify fields              |
+| **Full Table Scans**      | Slow queries on large tables          | Add indexes on filtered columns             |
+| **Non-atomic Operations** | Data inconsistency on partial failure | Use `$transaction()`                        |
+| **Unbounded Queries**     | Memory issues, slow responses         | Always use pagination                       |
+| **Sequential Queries**    | Unnecessary wait time                 | Use `Promise.all()` for independent queries |
 
 ### 7. API Endpoints
 
@@ -3274,7 +3381,7 @@ hooks/ → Custom React hooks
 services/ → API/business logic  
 types/ → TypeScript types  
 init-db/ → Database initialization SQL scripts  
-prisma/ → Prisma schema, migrations, and seed data  
+prisma/ → Prisma schema, migrations, and seed data
 
 This structure separates concerns and helps the app scale as features grow.
 
@@ -3345,6 +3452,7 @@ This section documents database transactions, indexing strategies, and query opt
 ### Overview
 
 Database transactions and query optimization are essential for:
+
 - **Data Integrity**: Ensuring multiple operations succeed or fail together
 - **Performance**: Reducing response times through efficient queries
 - **Scalability**: Handling larger datasets without degradation
@@ -3363,6 +3471,7 @@ The transaction service is located at `services/transaction.service.ts` and prov
 ##### 1.1 Booking with Payment Transaction
 
 When a user books a place, we must:
+
 1. Create the booking record
 2. Create the payment record
 3. Link them together
@@ -3396,7 +3505,7 @@ async createBookingWithPayment(input: CreateBookingWithPaymentInput) {
 
     return { booking, payment };
   });
-  
+
   return result;
 }
 ```
@@ -3404,6 +3513,7 @@ async createBookingWithPayment(input: CreateBookingWithPaymentInput) {
 ##### 1.2 Trip Creation with Places Transaction
 
 Creating a trip involves:
+
 1. Creating the trip
 2. Adding the owner as trip member
 3. Adding all selected places
@@ -3440,7 +3550,7 @@ async createTripWithPlaces(input: CreateTripWithPlacesInput) {
 
     return trip;
   });
-  
+
   return result;
 }
 ```
@@ -3457,9 +3567,9 @@ async demonstrateRollback() {
       const user = await tx.user.create({
         data: { email: "test@example.com", name: "Test" },
       });
-      
+
       console.log("User created:", user.id); // User exists in transaction
-      
+
       // Intentional error - triggers rollback
       throw new Error("Intentional error to demonstrate rollback");
     });
@@ -3471,6 +3581,7 @@ async demonstrateRollback() {
 ```
 
 **Key Points:**
+
 - On error, Prisma automatically rolls back ALL changes
 - No partial writes occur
 - Use `tx` (transaction client) for all queries within the transaction
@@ -3621,18 +3732,20 @@ The query optimization service is at `services/query-optimization.service.ts`.
 #### 3.1 Select Only Required Fields (Avoid Over-fetching)
 
 **❌ Inefficient - Fetches everything:**
+
 ```typescript
 const users = await prisma.user.findMany({
-  include: { 
-    reviews: true, 
-    favorites: true, 
+  include: {
+    reviews: true,
+    favorites: true,
     trips: { include: { tripPlaces: { include: { place: true } } } },
-    bookings: { include: { payments: true } }
+    bookings: { include: { payments: true } },
   },
 });
 ```
 
 **✅ Optimized - Fetches only what's needed:**
+
 ```typescript
 const users = await prisma.user.findMany({
   select: {
@@ -3688,10 +3801,10 @@ Filter using indexed columns for fast queries:
 // All these fields have indexes!
 const places = await prisma.place.findMany({
   where: {
-    isActive: true,        // @@index([isActive])
-    country: "France",     // @@index([country])
-    isFeatured: true,      // @@index([isFeatured])
-    rating: { gte: 4.0 },  // @@index([rating])
+    isActive: true, // @@index([isActive])
+    country: "France", // @@index([country])
+    isFeatured: true, // @@index([isFeatured])
+    rating: { gte: 4.0 }, // @@index([rating])
   },
   orderBy: { rating: "desc" },
   take: 10,
@@ -3701,6 +3814,7 @@ const places = await prisma.place.findMany({
 #### 3.4 Batch Operations
 
 **❌ Inefficient - N separate queries:**
+
 ```typescript
 for (const userData of users) {
   await prisma.user.create({ data: userData }); // N queries!
@@ -3708,6 +3822,7 @@ for (const userData of users) {
 ```
 
 **✅ Optimized - Single query:**
+
 ```typescript
 await prisma.user.createMany({
   data: users,
@@ -3718,17 +3833,19 @@ await prisma.user.createMany({
 #### 3.5 Avoid N+1 Queries
 
 **❌ N+1 Problem - Query inside loop:**
+
 ```typescript
 const trips = await prisma.trip.findMany();
 for (const trip of trips) {
   // N additional queries!
-  const places = await prisma.tripPlace.findMany({ 
-    where: { tripId: trip.id } 
+  const places = await prisma.tripPlace.findMany({
+    where: { tripId: trip.id },
   });
 }
 ```
 
 **✅ Optimized - Single query with include:**
+
 ```typescript
 const trips = await prisma.trip.findMany({
   include: {
@@ -3762,13 +3879,15 @@ In `lib/prisma.ts`:
 
 ```typescript
 export const prisma = new PrismaClient({
-  log: process.env.NODE_ENV === "development"
-    ? ["query", "info", "warn", "error"]
-    : ["error"],
+  log:
+    process.env.NODE_ENV === "development"
+      ? ["query", "info", "warn", "error"]
+      : ["error"],
 });
 ```
 
 Run with debug logging:
+
 ```bash
 DEBUG="prisma:query" npm run dev
 ```
@@ -3800,24 +3919,24 @@ GET /api/query-optimization?action=compare-performance
 
 ### 5. Performance Comparison Results
 
-| Query Type | Before Optimization | After Optimization | Improvement |
-|------------|--------------------|--------------------|-------------|
-| Get Users (10 records) | ~150ms | ~12ms | **92% faster** |
-| Get Featured Places | ~80ms | ~8ms | **90% faster** |
-| Filter Places by Country | ~200ms (full scan) | ~15ms (indexed) | **92% faster** |
-| Get User Bookings | ~180ms | ~20ms | **89% faster** |
-| Dashboard Statistics | ~500ms (sequential) | ~50ms (parallel) | **90% faster** |
+| Query Type               | Before Optimization | After Optimization | Improvement    |
+| ------------------------ | ------------------- | ------------------ | -------------- |
+| Get Users (10 records)   | ~150ms              | ~12ms              | **92% faster** |
+| Get Featured Places      | ~80ms               | ~8ms               | **90% faster** |
+| Filter Places by Country | ~200ms (full scan)  | ~15ms (indexed)    | **92% faster** |
+| Get User Bookings        | ~180ms              | ~20ms              | **89% faster** |
+| Dashboard Statistics     | ~500ms (sequential) | ~50ms (parallel)   | **90% faster** |
 
 ### 6. Anti-Patterns Avoided
 
-| Anti-Pattern | Problem | Solution Used |
-|--------------|---------|---------------|
-| Over-fetching | Slow responses, wasted bandwidth | `select` specific fields |
-| N+1 queries | N extra queries for relations | `include` with select |
-| Full table scans | Slow queries on large tables | Indexed WHERE clauses |
-| Sequential queries | Slow independent operations | `Promise.all()` |
-| No pagination | Memory issues, slow responses | `skip` and `take` |
-| Manual loops for bulk ops | N queries instead of 1 | `createMany`/`updateMany` |
+| Anti-Pattern              | Problem                          | Solution Used             |
+| ------------------------- | -------------------------------- | ------------------------- |
+| Over-fetching             | Slow responses, wasted bandwidth | `select` specific fields  |
+| N+1 queries               | N extra queries for relations    | `include` with select     |
+| Full table scans          | Slow queries on large tables     | Indexed WHERE clauses     |
+| Sequential queries        | Slow independent operations      | `Promise.all()`           |
+| No pagination             | Memory issues, slow responses    | `skip` and `take`         |
+| Manual loops for bulk ops | N queries instead of 1           | `createMany`/`updateMany` |
 
 ### 7. Production Monitoring Recommendations
 
@@ -3840,16 +3959,16 @@ For production environments, consider:
 
 ### 8. API Endpoints Summary
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/transactions` | GET | Transaction API documentation |
-| `/api/transactions?action=demo-rollback` | GET | Demonstrate transaction rollback |
-| `/api/transactions` | POST | Execute transactions (booking, trip, payment) |
-| `/api/query-optimization` | GET | Query optimization API documentation |
-| `/api/query-optimization?action=users-optimized` | GET | Optimized user query |
-| `/api/query-optimization?action=places-optimized` | GET | Optimized places query with filters |
-| `/api/query-optimization?action=compare-performance` | GET | Compare query performance |
-| `/api/query-optimization?action=statistics` | GET | Dashboard statistics |
+| Endpoint                                             | Method | Description                                   |
+| ---------------------------------------------------- | ------ | --------------------------------------------- |
+| `/api/transactions`                                  | GET    | Transaction API documentation                 |
+| `/api/transactions?action=demo-rollback`             | GET    | Demonstrate transaction rollback              |
+| `/api/transactions`                                  | POST   | Execute transactions (booking, trip, payment) |
+| `/api/query-optimization`                            | GET    | Query optimization API documentation          |
+| `/api/query-optimization?action=users-optimized`     | GET    | Optimized user query                          |
+| `/api/query-optimization?action=places-optimized`    | GET    | Optimized places query with filters           |
+| `/api/query-optimization?action=compare-performance` | GET    | Compare query performance                     |
+| `/api/query-optimization?action=statistics`          | GET    | Dashboard statistics                          |
 
 ### 9. Reflection
 
@@ -3895,4 +4014,3 @@ const [users, places, stats] = await Promise.all([...]);
 ```
 
 ---
-
