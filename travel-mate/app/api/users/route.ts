@@ -3,6 +3,7 @@
  *
  * RESTful API endpoints for user management.
  * Supports: GET (list/paginate), POST (create)
+ * Implements Redis caching with cache-aside pattern.
  *
  * Endpoints:
  * - GET  /api/users       - List all users with pagination & filtering
@@ -23,12 +24,20 @@ import {
 import { createUserSchema } from "@/lib/schemas";
 import { handleError, ConflictError } from "@/lib/errorHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
+import {
+  cacheAside,
+  buildListCacheKey,
+  CachePrefix,
+  CacheTTL,
+  invalidateUsersCache,
+} from "@/lib/cache";
 
 // ============================================
 // GET /api/users - List users with pagination
 // ============================================
 export async function GET(request: NextRequest) {
   const context = { method: "GET", path: "/api/users", operation: "listUsers" };
+  const startTime = performance.now();
 
   try {
     const timer = logger.time("GET /api/users");
@@ -55,10 +64,24 @@ export async function GET(request: NextRequest) {
       | "asc"
       | "desc";
 
+    // Skip cache for requests with bypass flag
+    const skipCache = searchParams.get("_bypass_cache") === "true";
+
     // Simulate error for testing (remove in production)
     if (searchParams.get("_simulate_error") === "true") {
       throw new Error("Simulated database connection failure!");
     }
+
+    // Build cache key
+    const cacheKey = buildListCacheKey(CachePrefix.USERS, {
+      page: String(page),
+      limit: String(limit),
+      role,
+      isActive,
+      search,
+      sortBy,
+      sortOrder,
+    });
 
     // Build where clause
     const where: Prisma.UserWhereInput = {};
@@ -85,45 +108,66 @@ export async function GET(request: NextRequest) {
       : "createdAt";
     const orderBy = { [orderByField]: sortOrder };
 
-    // Execute queries in parallel
-    const [users, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy,
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          avatarUrl: true,
-          bio: true,
-          phoneNumber: true,
-          role: true,
-          emailVerified: true,
-          isActive: true,
-          lastLoginAt: true,
-          createdAt: true,
-          updatedAt: true,
-          _count: {
+    // Use cache-aside pattern for data fetching
+    const {
+      data: result,
+      cached,
+      duration,
+    } = await cacheAside({
+      key: cacheKey,
+      ttl: CacheTTL.SHORT, // 60 seconds TTL for users list
+      skipCache,
+      fetchFn: async () => {
+        // Execute queries in parallel
+        const [users, total] = await Promise.all([
+          prisma.user.findMany({
+            where,
+            skip,
+            take: limit,
+            orderBy,
             select: {
-              reviews: true,
-              trips: true,
-              favorites: true,
-              bookings: true,
+              id: true,
+              email: true,
+              name: true,
+              avatarUrl: true,
+              bio: true,
+              phoneNumber: true,
+              role: true,
+              emailVerified: true,
+              isActive: true,
+              lastLoginAt: true,
+              createdAt: true,
+              updatedAt: true,
+              _count: {
+                select: {
+                  reviews: true,
+                  trips: true,
+                  favorites: true,
+                  bookings: true,
+                },
+              },
             },
-          },
-        },
-      }),
-      prisma.user.count({ where }),
-    ]);
+          }),
+          prisma.user.count({ where }),
+        ]);
+        return { users, total };
+      },
+    });
+
+    const { users, total } = result;
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(total / limit);
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
 
-    timer.end({ usersCount: users.length, total });
+    const totalDuration = performance.now() - startTime;
+    timer.end({
+      usersCount: users.length,
+      total,
+      cached,
+      duration: `${duration.toFixed(2)}ms`,
+    });
 
     return sendPaginatedSuccess(
       users,
@@ -136,6 +180,13 @@ export async function GET(request: NextRequest) {
         search,
         sortBy: orderByField,
         sortOrder,
+        _cache: {
+          hit: cached,
+          key: cacheKey,
+          ttl: CacheTTL.SHORT,
+          duration: `${duration.toFixed(2)}ms`,
+          totalDuration: `${totalDuration.toFixed(2)}ms`,
+        },
       }
     );
   } catch (error) {
@@ -204,6 +255,9 @@ export async function POST(request: NextRequest) {
     });
 
     timer.end({ userId: user.id });
+
+    // Invalidate users cache after creating new user
+    await invalidateUsersCache();
 
     return sendSuccess(user, "User created successfully", 201);
   } catch (error) {

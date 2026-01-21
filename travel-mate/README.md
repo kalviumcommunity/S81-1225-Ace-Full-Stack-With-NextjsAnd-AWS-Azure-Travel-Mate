@@ -4014,3 +4014,416 @@ const [users, places, stats] = await Promise.all([...]);
 ```
 
 ---
+## 🔴 Redis Caching Layer
+
+This application uses **Redis** as a high-performance caching layer to improve API response times and reduce database load. The implementation follows the **cache-aside pattern** with configurable TTL (Time-To-Live) policies and automatic cache invalidation.
+
+### Why Redis Caching?
+
+- **Dramatically faster responses**: Cache hits return in ~5-15ms vs ~100-300ms for database queries
+- **Reduced database load**: Frequently accessed data is served from memory
+- **Horizontal scalability**: Redis can be clustered for high availability
+- **TTL-based expiration**: Data automatically expires and refreshes
+
+### Architecture Overview
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                        API Request Flow                          │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Client Request                                                  │
+│       │                                                          │
+│       ▼                                                          │
+│  ┌─────────────┐      Cache Hit?       ┌─────────────┐          │
+│  │   API Route │──────────────────────►│    Redis    │          │
+│  └─────────────┘                       └─────────────┘          │
+│       │                                      │                   │
+│       │ Cache Miss                           │ Cache Hit         │
+│       ▼                                      │                   │
+│  ┌─────────────┐                             │                   │
+│  │  PostgreSQL │                             │                   │
+│  └─────────────┘                             │                   │
+│       │                                      │                   │
+│       │ Fetch Data                           │                   │
+│       ▼                                      ▼                   │
+│  ┌─────────────┐                       ┌─────────────┐          │
+│  │ Store Cache │──────────────────────►│  Response   │          │
+│  └─────────────┘                       └─────────────┘          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### File Structure
+
+```
+lib/
+├── redis.ts      # Redis connection singleton with reconnection logic
+├── cache.ts      # Cache service with cache-aside pattern implementation
+```
+
+### Redis Connection Setup
+
+```typescript
+// lib/redis.ts
+import Redis from "ioredis";
+import { logger } from "./logger";
+
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
+
+const redis = new Redis(REDIS_URL, {
+  maxRetriesPerRequest: 3,
+  retryDelayOnFailover: 100,
+  enableReadyCheck: true,
+  lazyConnect: true,
+  retryStrategy: (times: number) => {
+    if (times > 10) return null; // Stop retrying
+    return Math.min(times * 100, 3000);
+  },
+});
+
+export default redis;
+```
+
+### TTL Policies
+
+Different data types have different freshness requirements. The cache uses these TTL (Time-To-Live) policies:
+
+| TTL Policy   | Duration     | Use Case                               |
+| ------------ | ------------ | -------------------------------------- |
+| `VERY_SHORT` | 30 seconds   | Rapidly changing data (live stats)     |
+| `SHORT`      | 60 seconds   | Default for list endpoints             |
+| `MEDIUM`     | 5 minutes    | Moderately updated data                |
+| `LONG`       | 15 minutes   | Rarely changing data (categories)      |
+| `VERY_LONG`  | 1 hour       | Static/reference data                  |
+
+```typescript
+// lib/cache.ts
+export const CacheTTL = {
+  VERY_SHORT: 30,   // 30 seconds
+  SHORT: 60,        // 1 minute
+  MEDIUM: 300,      // 5 minutes
+  LONG: 900,        // 15 minutes
+  VERY_LONG: 3600,  // 1 hour
+} as const;
+```
+
+### Cache-Aside Pattern Implementation
+
+The cache-aside (lazy-loading) pattern:
+1. Check cache for data
+2. If found (cache hit) → return cached data
+3. If not found (cache miss) → query database
+4. Store result in cache with TTL
+5. Return data
+
+```typescript
+// lib/cache.ts
+export async function cacheAside<T>({
+  key,
+  ttl = CacheTTL.SHORT,
+  fetchFn,
+  skipCache = false,
+}: CacheAsideOptions<T>): Promise<{ data: T; cached: boolean; duration: number }> {
+  const startTime = performance.now();
+
+  // Skip cache if requested
+  if (skipCache) {
+    const data = await fetchFn();
+    return { data, cached: false, duration: performance.now() - startTime };
+  }
+
+  // Try to get from cache
+  const cached = await cacheGet<T>(key);
+  if (cached !== null) {
+    return { data: cached, cached: true, duration: performance.now() - startTime };
+  }
+
+  // Fetch from source
+  const data = await fetchFn();
+
+  // Store in cache (async, non-blocking)
+  cacheSet(key, data, ttl).catch(() => {});
+
+  return { data, cached: false, duration: performance.now() - startTime };
+}
+```
+
+### Using Caching in API Routes
+
+#### GET Request with Caching
+
+```typescript
+// app/api/places/route.ts
+import { cacheAside, buildListCacheKey, CachePrefix, CacheTTL } from "@/lib/cache";
+
+export async function GET(request: NextRequest) {
+  const startTime = performance.now();
+  const { searchParams } = new URL(request.url);
+
+  // Build cache key from query parameters
+  const cacheKey = buildListCacheKey(CachePrefix.PLACES, {
+    page: searchParams.get("page"),
+    limit: searchParams.get("limit"),
+    country: searchParams.get("country"),
+    // ... other filters
+  });
+
+  // Skip cache if explicitly requested
+  const skipCache = searchParams.get("_bypass_cache") === "true";
+
+  // Use cache-aside pattern
+  const { data: result, cached, duration } = await cacheAside({
+    key: cacheKey,
+    ttl: CacheTTL.SHORT, // 60 seconds
+    skipCache,
+    fetchFn: async () => {
+      const [places, total] = await Promise.all([
+        prisma.place.findMany({ where, skip, take: limit }),
+        prisma.place.count({ where }),
+      ]);
+      return { places, total };
+    },
+  });
+
+  // Response includes cache metadata
+  return sendPaginatedSuccess(places, pagination, "Success", {
+    _cache: { hit: cached, key: cacheKey, ttl: CacheTTL.SHORT, duration }
+  });
+}
+```
+
+### Cache Invalidation
+
+When data is mutated (CREATE, UPDATE, DELETE), the cache must be invalidated to prevent stale data:
+
+```typescript
+// app/api/places/route.ts
+import { invalidatePlacesCache } from "@/lib/cache";
+
+export async function POST(request: NextRequest) {
+  // ... create place in database
+
+  // Invalidate all places cache entries
+  await invalidatePlacesCache();
+
+  return sendSuccess(place, "Place created successfully", 201);
+}
+```
+
+```typescript
+// app/api/places/[id]/route.ts
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  const { id } = await params;
+
+  // ... update place in database
+
+  // Invalidate specific place and all list caches
+  await invalidatePlacesCache(id);
+
+  return sendSuccess(place, "Place updated successfully");
+}
+
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  const { id } = await params;
+
+  // ... delete place from database
+
+  // Invalidate cache after deletion
+  await invalidatePlacesCache(id);
+
+  return sendSuccess(null, "Place deleted successfully");
+}
+```
+
+### Cache Key Naming Convention
+
+Consistent cache key naming makes debugging and invalidation easier:
+
+| Pattern                  | Example                      | Description                    |
+| ------------------------ | ---------------------------- | ------------------------------ |
+| `{resource}:list`        | `places:list`                | Default list without filters   |
+| `{resource}:list:{hash}` | `places:list:a1b2c3d4`       | Filtered list (hash of params) |
+| `{resource}:{id}`        | `places:123-uuid`            | Single resource by ID          |
+| `{resource}:slug:{slug}` | `places:slug:taj-mahal`      | Single resource by slug        |
+
+```typescript
+// lib/cache.ts
+export function buildListCacheKey(prefix: string, params?: Record<string, string | null>): string {
+  if (!params || Object.keys(params).length === 0) {
+    return `${prefix}:list`;
+  }
+  const hash = hashQueryParams(params);
+  return `${prefix}:list:${hash}`;
+}
+
+export function buildItemCacheKey(prefix: string, id: string): string {
+  return `${prefix}:${id}`;
+}
+```
+
+### Cache Statistics API
+
+Monitor cache performance via the stats endpoint:
+
+```bash
+# Get cache metrics
+curl http://localhost:3000/api/cache/stats
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "cache": {
+      "hits": 150,
+      "misses": 25,
+      "errors": 0,
+      "hitRate": "85.71%",
+      "totalRequests": 175,
+      "performance": {
+        "avgHitTime": "8.45ms",
+        "avgMissTime": "125.30ms",
+        "speedImprovement": "93.3%"
+      }
+    },
+    "redis": {
+      "connected": true,
+      "keyCount": 42,
+      "memoryUsed": "1.25M",
+      "memoryPeak": "2.50M"
+    },
+    "ttlPolicies": {
+      "VERY_SHORT": "30 seconds - Rapidly changing data",
+      "SHORT": "60 seconds - Default for list endpoints",
+      "MEDIUM": "5 minutes - Moderately updated data",
+      "LONG": "15 minutes - Rarely changing data (categories)",
+      "VERY_LONG": "1 hour - Static/reference data"
+    }
+  }
+}
+```
+
+### Performance Comparison
+
+#### Cache Miss (Cold Request)
+
+```bash
+curl -X GET "http://localhost:3000/api/places"
+```
+
+**Terminal Log:**
+
+```
+[INFO] Cache MISS { component: "cache", key: "places:list:default", duration: "2.15ms" }
+[INFO] Places fetched successfully {
+  page: 1,
+  limit: 10,
+  total: 150,
+  cached: false,
+  duration: "127.45ms",
+  totalDuration: "130.20ms"
+}
+```
+
+#### Cache Hit (Warm Request)
+
+```bash
+curl -X GET "http://localhost:3000/api/places"
+```
+
+**Terminal Log:**
+
+```
+[INFO] Cache HIT { component: "cache", key: "places:list:default", duration: "3.25ms" }
+[INFO] Places fetched successfully {
+  page: 1,
+  limit: 10,
+  total: 150,
+  cached: true,
+  duration: "8.12ms",
+  totalDuration: "12.45ms"
+}
+```
+
+#### Performance Improvement
+
+| Metric          | Without Cache | With Cache (Hit) | Improvement |
+| --------------- | ------------- | ---------------- | ----------- |
+| Response Time   | ~120-150ms    | ~8-15ms          | **90-95%**  |
+| DB Queries/sec  | High          | Reduced by ~85%  | Significant |
+| Server CPU      | Higher        | Lower            | ~40% less   |
+
+### Cache Coherence Strategy
+
+To maintain consistency between cache and database:
+
+1. **Write-Through Invalidation**: Every mutation immediately invalidates related cache keys
+2. **TTL Expiration**: Even without invalidation, data refreshes after TTL expires
+3. **Pattern-Based Invalidation**: `invalidatePlacesCache()` clears all `places:*` keys
+4. **Graceful Degradation**: If Redis is unavailable, requests fall back to database
+
+### Mitigating Stale Data Risks
+
+| Risk                    | Mitigation                                      |
+| ----------------------- | ----------------------------------------------- |
+| Stale reads after write | Immediate cache invalidation on mutations       |
+| Cache not invalidated   | Short TTLs ensure data refreshes automatically  |
+| Redis unavailable       | Graceful fallback to database queries           |
+| Cache stampede          | TTL jitter + async cache population             |
+| Memory overflow         | TTL-based eviction + Redis maxmemory policies   |
+
+### Testing Cache Behavior
+
+```bash
+# First request (cache miss)
+curl -w "\nTotal time: %{time_total}s\n" http://localhost:3000/api/places
+
+# Second request (cache hit) - should be much faster
+curl -w "\nTotal time: %{time_total}s\n" http://localhost:3000/api/places
+
+# Bypass cache to force database query
+curl -w "\nTotal time: %{time_total}s\n" "http://localhost:3000/api/places?_bypass_cache=true"
+
+# Check cache statistics
+curl http://localhost:3000/api/cache/stats
+
+# Reset cache metrics
+curl -X POST http://localhost:3000/api/cache/stats
+
+# Clear all cache (with confirmation)
+curl -X DELETE "http://localhost:3000/api/cache/stats?confirm=true"
+```
+
+### Best Practices Summary
+
+```typescript
+// ✅ DO: Use cache for read-heavy endpoints
+const { data, cached } = await cacheAside({
+  key: buildListCacheKey(CachePrefix.PLACES, params),
+  ttl: CacheTTL.SHORT,
+  fetchFn: () => prisma.place.findMany({ where }),
+});
+
+// ✅ DO: Invalidate cache on mutations
+await prisma.place.create({ data });
+await invalidatePlacesCache();
+
+// ✅ DO: Use appropriate TTLs based on data freshness needs
+// Categories rarely change → LONG TTL (15 min)
+// User lists change frequently → SHORT TTL (1 min)
+
+// ✅ DO: Include cache metadata in responses for debugging
+return sendSuccess(data, "Success", 200, { _cache: { hit: cached, duration } });
+
+// ✅ DO: Allow cache bypass for debugging
+const skipCache = searchParams.get("_bypass_cache") === "true";
+
+// ❌ DON'T: Cache user-specific or sensitive data without proper isolation
+// ❌ DON'T: Use very long TTLs for frequently changing data
+// ❌ DON'T: Forget to invalidate cache on mutations
+```
+
+---

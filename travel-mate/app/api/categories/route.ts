@@ -3,6 +3,7 @@
  *
  * RESTful API endpoints for category management.
  * Supports: GET (list/paginate), POST (create)
+ * Implements Redis caching with cache-aside pattern.
  *
  * Endpoints:
  * - GET  /api/categories       - List all categories with pagination & filtering
@@ -22,11 +23,20 @@ import {
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
 import { createCategorySchema } from "@/lib/schemas";
+import {
+  cacheAside,
+  buildListCacheKey,
+  CachePrefix,
+  CacheTTL,
+  invalidateCategoriesCache,
+} from "@/lib/cache";
 
 // ============================================
 // GET /api/categories - List categories with pagination
 // ============================================
 export async function GET(request: NextRequest) {
+  const startTime = performance.now();
+
   try {
     const { searchParams } = new URL(request.url);
 
@@ -45,6 +55,19 @@ export async function GET(request: NextRequest) {
     const sortOrder = (searchParams.get("sortOrder") || "asc") as
       | "asc"
       | "desc";
+
+    // Skip cache for requests with bypass flag
+    const skipCache = searchParams.get("_bypass_cache") === "true";
+
+    // Build cache key
+    const cacheKey = buildListCacheKey(CachePrefix.CATEGORIES, {
+      page: String(page),
+      limit: String(limit),
+      isActive,
+      search,
+      sortBy,
+      sortOrder,
+    });
 
     // Build where clause
     const where: Prisma.CategoryWhereInput = {};
@@ -70,39 +93,62 @@ export async function GET(request: NextRequest) {
       : "sortOrder";
     const orderBy = { [orderByField]: sortOrder };
 
-    // Execute queries in parallel
-    const [categories, total] = await Promise.all([
-      prisma.category.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy,
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          description: true,
-          iconUrl: true,
-          isActive: true,
-          sortOrder: true,
-          createdAt: true,
-          updatedAt: true,
-          _count: {
+    // Use cache-aside pattern for data fetching
+    const {
+      data: result,
+      cached,
+      duration,
+    } = await cacheAside({
+      key: cacheKey,
+      ttl: CacheTTL.LONG, // 15 minutes TTL for categories (rarely change)
+      skipCache,
+      fetchFn: async () => {
+        // Execute queries in parallel
+        const [categories, total] = await Promise.all([
+          prisma.category.findMany({
+            where,
+            skip,
+            take: limit,
+            orderBy,
             select: {
-              places: true,
+              id: true,
+              name: true,
+              slug: true,
+              description: true,
+              iconUrl: true,
+              isActive: true,
+              sortOrder: true,
+              createdAt: true,
+              updatedAt: true,
+              _count: {
+                select: {
+                  places: true,
+                },
+              },
             },
-          },
-        },
-      }),
-      prisma.category.count({ where }),
-    ]);
+          }),
+          prisma.category.count({ where }),
+        ]);
+        return { categories, total };
+      },
+    });
+
+    const { categories, total } = result;
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(total / limit);
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
 
-    logger.info("Categories fetched successfully", { page, limit, total });
+    const totalDuration = performance.now() - startTime;
+    logger.info("Categories fetched successfully", {
+      page,
+      limit,
+      total,
+      cached,
+      duration: `${duration.toFixed(2)}ms`,
+      totalDuration: `${totalDuration.toFixed(2)}ms`,
+    });
 
     return sendPaginatedSuccess(
       categories,
@@ -121,6 +167,12 @@ export async function GET(request: NextRequest) {
         search,
         sortBy: orderByField,
         sortOrder,
+        _cache: {
+          hit: cached,
+          key: cacheKey,
+          ttl: CacheTTL.LONG,
+          duration: `${duration.toFixed(2)}ms`,
+        },
       }
     );
   } catch (error) {
@@ -195,6 +247,9 @@ export async function POST(request: NextRequest) {
     });
 
     logger.info("Category created successfully", { categoryId: category.id });
+
+    // Invalidate categories cache after creating new category
+    await invalidateCategoriesCache();
 
     return sendSuccess(category, "Category created successfully", 201);
   } catch (error) {

@@ -3,6 +3,7 @@
  *
  * RESTful API endpoints for travel places/destinations management.
  * Supports: GET (list/paginate), POST (create)
+ * Implements Redis caching with cache-aside pattern.
  *
  * Endpoints:
  * - GET  /api/places       - List all places with pagination & filtering
@@ -22,11 +23,20 @@ import {
 } from "@/lib/responseHandler";
 import { ERROR_CODES } from "@/lib/errorCodes";
 import { createPlaceSchema } from "@/lib/schemas";
+import {
+  cacheAside,
+  buildListCacheKey,
+  CachePrefix,
+  CacheTTL,
+  invalidatePlacesCache,
+} from "@/lib/cache";
 
 // ============================================
 // GET /api/places - List places with pagination
 // ============================================
 export async function GET(request: NextRequest) {
+  const startTime = performance.now();
+
   try {
     const { searchParams } = new URL(request.url);
 
@@ -52,6 +62,26 @@ export async function GET(request: NextRequest) {
     const sortOrder = (searchParams.get("sortOrder") || "desc") as
       | "asc"
       | "desc";
+
+    // Skip cache for requests with bypass flag
+    const skipCache = searchParams.get("_bypass_cache") === "true";
+
+    // Build cache key from query parameters
+    const cacheKey = buildListCacheKey(CachePrefix.PLACES, {
+      page: String(page),
+      limit: String(limit),
+      country,
+      city,
+      categoryId,
+      isFeatured,
+      isActive,
+      minRating,
+      maxRating,
+      priceLevel,
+      search,
+      sortBy,
+      sortOrder,
+    });
 
     // Build where clause
     const where: Prisma.PlaceWhereInput = {};
@@ -119,57 +149,82 @@ export async function GET(request: NextRequest) {
       : "createdAt";
     const orderBy = { [orderByField]: sortOrder };
 
-    // Execute queries in parallel
-    const [places, total] = await Promise.all([
-      prisma.place.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy,
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          description: true,
-          address: true,
-          city: true,
-          country: true,
-          latitude: true,
-          longitude: true,
-          imageUrl: true,
-          rating: true,
-          reviewCount: true,
-          priceLevel: true,
-          isActive: true,
-          isFeatured: true,
-          createdAt: true,
-          updatedAt: true,
-          category: {
+    // Use cache-aside pattern for data fetching
+    const {
+      data: result,
+      cached,
+      duration,
+    } = await cacheAside({
+      key: cacheKey,
+      ttl: CacheTTL.SHORT, // 60 seconds TTL for places list
+      skipCache,
+      fetchFn: async () => {
+        // Execute queries in parallel
+        const [places, total] = await Promise.all([
+          prisma.place.findMany({
+            where,
+            skip,
+            take: limit,
+            orderBy,
             select: {
               id: true,
               name: true,
               slug: true,
+              description: true,
+              address: true,
+              city: true,
+              country: true,
+              latitude: true,
+              longitude: true,
+              imageUrl: true,
+              rating: true,
+              reviewCount: true,
+              priceLevel: true,
+              isActive: true,
+              isFeatured: true,
+              createdAt: true,
+              updatedAt: true,
+              category: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                },
+              },
+              _count: {
+                select: {
+                  reviews: true,
+                  favorites: true,
+                },
+              },
             },
-          },
-          _count: {
-            select: {
-              reviews: true,
-              favorites: true,
-            },
-          },
-        },
-      }),
-      prisma.place.count({ where }),
-    ]);
+          }),
+          prisma.place.count({ where }),
+        ]);
+        return { places, total };
+      },
+    });
+
+    const { places, total } = result;
 
     // Calculate pagination metadata
     const totalPages = Math.ceil(total / limit);
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
 
-    logger.info("Places fetched successfully", { page, limit, total });
+    const totalDuration = performance.now() - startTime;
+    logger.info("Places fetched successfully", {
+      page,
+      limit,
+      total,
+      cached,
+      cacheKey,
+      duration: `${duration.toFixed(2)}ms`,
+      totalDuration: `${totalDuration.toFixed(2)}ms`,
+    });
 
-    return sendPaginatedSuccess(
+    // Add cache headers to response
+    const response = sendPaginatedSuccess(
       places,
       { page, limit, total, totalPages, hasNextPage, hasPrevPage },
       "Places fetched successfully",
@@ -187,8 +242,16 @@ export async function GET(request: NextRequest) {
         search,
         sortBy: orderByField,
         sortOrder,
+        _cache: {
+          hit: cached,
+          key: cacheKey,
+          ttl: CacheTTL.SHORT,
+          duration: `${duration.toFixed(2)}ms`,
+        },
       }
     );
+
+    return response;
   } catch (error) {
     logger.error("Failed to fetch places", { error });
     return sendError(
@@ -292,6 +355,9 @@ export async function POST(request: NextRequest) {
     });
 
     logger.info("Place created successfully", { placeId: place.id });
+
+    // Invalidate places cache after creating a new place
+    await invalidatePlacesCache();
 
     return sendSuccess(place, "Place created successfully", 201);
   } catch (error) {
