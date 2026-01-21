@@ -7,6 +7,8 @@
  * Endpoints:
  * - GET  /api/users       - List all users with pagination & filtering
  * - POST /api/users       - Create a new user
+ *
+ * This route demonstrates the centralized error handling system.
  */
 
 import { NextRequest } from "next/server";
@@ -16,18 +18,20 @@ import { Prisma } from "@prisma/client";
 import {
   sendPaginatedSuccess,
   sendSuccess,
-  sendConflict,
-  sendError,
   validateRequest,
 } from "@/lib/responseHandler";
-import { ERROR_CODES } from "@/lib/errorCodes";
 import { createUserSchema } from "@/lib/schemas";
+import { handleError, ConflictError } from "@/lib/errorHandler";
+import { ERROR_CODES } from "@/lib/errorCodes";
 
 // ============================================
 // GET /api/users - List users with pagination
 // ============================================
 export async function GET(request: NextRequest) {
+  const context = { method: "GET", path: "/api/users", operation: "listUsers" };
+
   try {
+    const timer = logger.time("GET /api/users");
     const { searchParams } = new URL(request.url);
 
     // Pagination parameters
@@ -50,6 +54,11 @@ export async function GET(request: NextRequest) {
     const sortOrder = (searchParams.get("sortOrder") || "desc") as
       | "asc"
       | "desc";
+
+    // Simulate error for testing (remove in production)
+    if (searchParams.get("_simulate_error") === "true") {
+      throw new Error("Simulated database connection failure!");
+    }
 
     // Build where clause
     const where: Prisma.UserWhereInput = {};
@@ -114,7 +123,7 @@ export async function GET(request: NextRequest) {
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
 
-    logger.info("Users fetched successfully", { page, limit, total });
+    timer.end({ usersCount: users.length, total });
 
     return sendPaginatedSuccess(
       users,
@@ -130,12 +139,8 @@ export async function GET(request: NextRequest) {
       }
     );
   } catch (error) {
-    logger.error("Failed to fetch users", { error });
-    return sendError(
-      "Failed to fetch users",
-      ERROR_CODES.USER_FETCH_ERROR,
-      500
-    );
+    // Use centralized error handler
+    return handleError(error, context);
   }
 }
 
@@ -143,7 +148,15 @@ export async function GET(request: NextRequest) {
 // POST /api/users - Create a new user
 // ============================================
 export async function POST(request: NextRequest) {
+  const context = {
+    method: "POST",
+    path: "/api/users",
+    operation: "createUser",
+  };
+
   try {
+    const timer = logger.time("POST /api/users");
+
     // Validate request body with Zod schema
     const validation = await validateRequest(request, createUserSchema);
     if (!validation.success) {
@@ -158,7 +171,11 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingUser) {
-      return sendConflict("User with this email already exists");
+      // Use custom ConflictError
+      throw new ConflictError(
+        "User with this email already exists",
+        ERROR_CODES.USER_DUPLICATE_EMAIL
+      );
     }
 
     // Create user
@@ -186,22 +203,11 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    logger.info("User created successfully", { userId: user.id });
+    timer.end({ userId: user.id });
 
     return sendSuccess(user, "User created successfully", 201);
   } catch (error) {
-    logger.error("Failed to create user", { error });
-
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      if (error.code === "P2002") {
-        return sendConflict("User with this email already exists");
-      }
-    }
-
-    return sendError(
-      "Failed to create user",
-      ERROR_CODES.USER_CREATE_ERROR,
-      500
-    );
+    // Use centralized error handler
+    return handleError(error, context);
   }
 }
