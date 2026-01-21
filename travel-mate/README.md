@@ -615,6 +615,443 @@ JWT_REFRESH_SECRET=your-refresh-secret-key-min-32-characters
 
 ---
 
+## 🛡️ Role-Based Access Control (RBAC) with Middleware
+
+This application implements a comprehensive **Role-Based Access Control (RBAC)** system using Next.js middleware to protect routes based on user roles and active sessions.
+
+### RBAC Overview
+
+**Principle of Least Privilege:** Users are granted only the minimum level of access necessary to perform their job functions. This reduces the attack surface and limits the potential damage from compromised accounts.
+
+### User Roles
+
+The application supports three user roles defined in Prisma:
+
+```typescript
+// prisma/schema.prisma
+enum UserRole {
+  USER       // Regular users - can access their own data
+  ADMIN      // Administrators - full system access
+  MODERATOR  // Moderators - can manage content
+}
+```
+
+| Role | Description | Access Level |
+|------|-------------|--------------|
+| `USER` | Regular authenticated users | Own profile, bookings, trips, reviews |
+| `MODERATOR` | Content moderators | User access + content moderation |
+| `ADMIN` | System administrators | Full access to all resources |
+
+### Middleware Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Incoming Request                              │
+└─────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Is this a public route?                           │
+│           (auth endpoints, health, public places, etc.)              │
+└─────────────────────────────────────────────────────────────────────┘
+                  │ YES                            │ NO
+                  ▼                                ▼
+┌─────────────────────────┐     ┌─────────────────────────────────────┐
+│     Allow Access        │     │   Extract JWT from Authorization    │
+│     (Skip checks)       │     │   header (Bearer <token>)           │
+└─────────────────────────┘     └─────────────────────────────────────┘
+                                                   │
+                                                   ▼
+                              ┌─────────────────────────────────────────┐
+                              │         Is token present?               │
+                              └─────────────────────────────────────────┘
+                                      │ NO                    │ YES
+                                      ▼                       ▼
+                         ┌─────────────────────┐ ┌─────────────────────┐
+                         │   401 Unauthorized  │ │   Verify JWT with   │
+                         │   "Token required"  │ │   jose library      │
+                         └─────────────────────┘ └─────────────────────┘
+                                                            │
+                                                            ▼
+                                     ┌─────────────────────────────────────┐
+                                     │        Is token valid?              │
+                                     └─────────────────────────────────────┘
+                                           │ NO                  │ YES
+                                           ▼                     ▼
+                              ┌─────────────────────┐ ┌─────────────────────┐
+                              │   401 Unauthorized  │ │   Check User Role   │
+                              │   "Invalid token"   │ │   against route     │
+                              └─────────────────────┘ └─────────────────────┘
+                                                                │
+                                                                ▼
+                                        ┌─────────────────────────────────────┐
+                                        │   Does role match route config?     │
+                                        └─────────────────────────────────────┘
+                                              │ NO                  │ YES
+                                              ▼                     ▼
+                                 ┌─────────────────────┐ ┌─────────────────────┐
+                                 │   403 Forbidden     │ │   Allow Access      │
+                                 │   "Access denied"   │ │   (Add user headers)│
+                                 └─────────────────────┘ └─────────────────────┘
+```
+
+### Middleware Implementation
+
+```typescript
+// middleware.ts
+import { NextRequest, NextResponse } from "next/server";
+import { jwtVerify } from "jose";
+
+// JWT secret encoded for jose library (Edge-compatible)
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
+
+// User roles
+enum UserRole {
+  USER = "USER",
+  ADMIN = "ADMIN",
+  MODERATOR = "MODERATOR",
+}
+
+// Route configuration for RBAC
+const PROTECTED_ROUTES = [
+  {
+    pattern: /^\/api\/admin(\/.*)?$/,
+    allowedRoles: [UserRole.ADMIN],           // Admin only
+    requireAuth: true,
+  },
+  {
+    pattern: /^\/api\/moderation(\/.*)?$/,
+    allowedRoles: [UserRole.ADMIN, UserRole.MODERATOR],
+    requireAuth: true,
+  },
+  {
+    pattern: /^\/api\/bookings(\/.*)?$/,
+    allowedRoles: [UserRole.USER, UserRole.ADMIN, UserRole.MODERATOR],
+    requireAuth: true,
+  },
+];
+
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  
+  // Find route config
+  const routeConfig = PROTECTED_ROUTES.find(r => r.pattern.test(pathname));
+  
+  if (!routeConfig?.requireAuth) {
+    return NextResponse.next();
+  }
+  
+  // Extract and verify token
+  const token = request.headers.get("authorization")?.slice(7);
+  
+  if (!token) {
+    return NextResponse.json(
+      { success: false, message: "Authorization token is required" },
+      { status: 401 }
+    );
+  }
+  
+  try {
+    const { payload } = await jwtVerify(token, JWT_SECRET);
+    
+    // Check role-based access
+    if (!routeConfig.allowedRoles.includes(payload.role as UserRole)) {
+      return NextResponse.json(
+        { success: false, message: "Access denied" },
+        { status: 403 }
+      );
+    }
+    
+    // Add user info to headers for downstream handlers
+    const headers = new Headers(request.headers);
+    headers.set("x-user-id", payload.id as string);
+    headers.set("x-user-role", payload.role as string);
+    
+    return NextResponse.next({ request: { headers } });
+  } catch {
+    return NextResponse.json(
+      { success: false, message: "Invalid or expired token" },
+      { status: 401 }
+    );
+  }
+}
+
+export const config = {
+  matcher: ["/api/:path*"],
+};
+```
+
+### Protected Routes Configuration
+
+| Route Pattern | Allowed Roles | Description |
+|---------------|---------------|-------------|
+| `/api/admin/*` | ADMIN | System administration |
+| `/api/admin/users` | ADMIN | User management |
+| `/api/admin/stats` | ADMIN | System statistics |
+| `/api/moderation/*` | ADMIN, MODERATOR | Content moderation |
+| `/api/bookings/*` | USER, ADMIN, MODERATOR | Booking management |
+| `/api/trips/*` | USER, ADMIN, MODERATOR | Trip management |
+| `/api/reviews/*` | USER, ADMIN, MODERATOR | Review management |
+
+### Public Routes (No Authentication Required)
+
+| Route | Description |
+|-------|-------------|
+| `/api/auth/login` | User authentication |
+| `/api/auth/signup` | User registration |
+| `/api/auth/refresh` | Token refresh |
+| `/api/health` | Health check |
+| `/api/places` | List places (public) |
+| `/api/categories` | List categories (public) |
+
+### Admin API Endpoints
+
+```typescript
+// app/api/admin/route.ts
+// GET /api/admin - Admin dashboard with system statistics
+
+// app/api/admin/users/route.ts
+// GET  /api/admin/users     - List all users with filters
+// POST /api/admin/users     - Create user with any role
+
+// app/api/admin/users/[id]/route.ts
+// GET    /api/admin/users/[id] - Get user details
+// PATCH  /api/admin/users/[id] - Update user (including role)
+// DELETE /api/admin/users/[id] - Deactivate user
+
+// app/api/admin/stats/route.ts
+// GET /api/admin/stats - Comprehensive system statistics
+```
+
+### Test Credentials
+
+After running `npm run db:seed`, the following test accounts are available:
+
+| Role | Email | Password |
+|------|-------|----------|
+| **ADMIN** | `admin@travelmate.com` | `Admin123!` |
+| **MODERATOR** | `mike.wanderer@example.com` | `Mod123!` |
+| **USER** | `john.traveler@example.com` | `User123!` |
+| **USER** | `sarah.explorer@example.com` | `User123!` |
+
+> ⚠️ **Security Note:** These credentials are for development/testing only. Never use these in production!
+
+### Testing Protected Routes
+
+#### Step 1: Login to Get JWT Token
+
+```bash
+# Login as admin
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@travelmate.com", "password": "Admin123!"}'
+
+# Login as regular user
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "john.traveler@example.com", "password": "User123!"}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "...",
+    "expiresIn": "1h"
+  }
+}
+```
+
+#### Step 2: Use Token for Protected Routes
+
+#### ✅ User Access to Protected Route (Allowed)
+
+```bash
+curl -X GET http://localhost:3000/api/users \
+  -H "Authorization: Bearer <USER_JWT_TOKEN>"
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Users retrieved successfully",
+  "data": [...]
+}
+```
+
+#### ✅ Admin Access to Admin Route (Allowed)
+
+```bash
+curl -X GET http://localhost:3000/api/admin \
+  -H "Authorization: Bearer <ADMIN_JWT_TOKEN>"
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "message": "Admin dashboard data retrieved successfully",
+  "data": {
+    "adminUser": {
+      "id": "...",
+      "email": "admin@travelmate.com",
+      "role": "ADMIN"
+    },
+    "statistics": {
+      "totalUsers": 150,
+      "activeUsers": 142,
+      "totalPlaces": 50,
+      "totalBookings": 234
+    }
+  }
+}
+```
+
+#### ❌ Regular User Access to Admin Route (Denied)
+
+```bash
+curl -X GET http://localhost:3000/api/admin \
+  -H "Authorization: Bearer <USER_JWT_TOKEN>"
+```
+
+**Response (403 Forbidden):**
+```json
+{
+  "success": false,
+  "message": "Access denied. This resource requires one of the following roles: ADMIN",
+  "code": "FORBIDDEN",
+  "timestamp": "2026-01-21T12:00:00.000Z"
+}
+```
+
+#### ❌ Missing Token (Unauthorized)
+
+```bash
+curl -X GET http://localhost:3000/api/admin
+```
+
+**Response (401 Unauthorized):**
+```json
+{
+  "success": false,
+  "message": "Authorization token is required. Please provide a valid Bearer token.",
+  "code": "UNAUTHORIZED",
+  "timestamp": "2026-01-21T12:00:00.000Z"
+}
+```
+
+#### ❌ Invalid/Expired Token (Unauthorized)
+
+```bash
+curl -X GET http://localhost:3000/api/admin \
+  -H "Authorization: Bearer invalid.token.here"
+```
+
+**Response (401 Unauthorized):**
+```json
+{
+  "success": false,
+  "message": "Invalid or expired token. Please login again.",
+  "code": "UNAUTHORIZED",
+  "timestamp": "2026-01-21T12:00:00.000Z"
+}
+```
+
+### Log Examples
+
+**Allowed Access Log:**
+```
+[INFO] Admin access granted: admin@travelmate.com (ADMIN)
+[INFO] Admin admin@travelmate.com fetched 20 users (page 1)
+```
+
+**Denied Access Log:**
+```
+[WARN] Access denied for user@example.com attempting to access /api/admin
+[WARN] Role USER not in allowed roles: [ADMIN]
+```
+
+### Adding New Roles
+
+Adding new roles (like `EDITOR`, `SUPPORT`) is straightforward:
+
+1. **Update Prisma Schema:**
+```prisma
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+  EDITOR      // New role
+  SUPPORT     // New role
+}
+```
+
+2. **Run Migration:**
+```bash
+npx prisma migrate dev --name add_new_roles
+```
+
+3. **Update Middleware Configuration:**
+```typescript
+// middleware.ts
+const PROTECTED_ROUTES = [
+  // ... existing routes
+  {
+    pattern: /^\/api\/content(\/.*)?$/,
+    allowedRoles: [UserRole.ADMIN, UserRole.EDITOR],
+    requireAuth: true,
+  },
+  {
+    pattern: /^\/api\/support(\/.*)?$/,
+    allowedRoles: [UserRole.ADMIN, UserRole.SUPPORT],
+    requireAuth: true,
+  },
+];
+```
+
+4. **Create Route Handlers:**
+```typescript
+// app/api/content/route.ts
+// app/api/support/route.ts
+```
+
+### Security Reflection
+
+#### Why RBAC Matters
+
+| Benefit | Description |
+|---------|-------------|
+| **Least Privilege** | Users only access what they need, reducing risk |
+| **Audit Trail** | Role-based logging makes security auditing easier |
+| **Scalability** | Adding new roles/permissions is simple |
+| **Compliance** | Meets regulatory requirements (GDPR, HIPAA, SOC2) |
+
+#### Security Risks if Middleware is Missing/Incorrect
+
+| Risk | Impact | Prevention |
+|------|--------|------------|
+| **Privilege Escalation** | Regular users access admin functions | Always verify roles server-side |
+| **Data Breach** | Unauthorized access to sensitive data | Implement defense in depth |
+| **Account Takeover** | Invalid tokens accepted | Validate JWT signatures and expiry |
+| **Broken Access Control** | OWASP Top 10 vulnerability | Test all role combinations |
+
+#### Best Practices Implemented
+
+1. **JWT Verification on Every Request** - No caching of auth state
+2. **Edge-Compatible Middleware** - Using `jose` library for Next.js Edge Runtime
+3. **Centralized Authorization** - Single middleware file for all protected routes
+4. **User Context Headers** - Pass user info to handlers via headers
+5. **Fail-Secure Default** - Deny access if any check fails
+6. **Structured Error Responses** - Clear error messages with codes
+7. **Logging** - Track all access attempts for auditing
+
+**Remember:** "Authorization isn't a feature—it's a requirement. Build it in from day one, not as an afterthought."
+
+---
+
 ## 🌐 RESTful API Route Structure
 
 This section documents the RESTful API architecture implemented using Next.js file-based routing under the `/api/` directory.
