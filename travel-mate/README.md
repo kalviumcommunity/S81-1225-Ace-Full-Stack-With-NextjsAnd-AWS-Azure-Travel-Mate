@@ -4885,3 +4885,459 @@ curl http://localhost:3000/api/files
 ```
 
 ---
+
+## 📧 Transactional Email Service with AWS SES
+
+This application integrates **AWS Simple Email Service (SES)** for sending transactional emails such as signup confirmations, password resets, booking notifications, and more. The implementation includes pre-built HTML email templates and a flexible API for custom messages.
+
+### Why AWS SES?
+
+| Feature | Benefit |
+| ------- | ------- |
+| **Cost-effective** | Pay only for what you send ($0.10 per 1000 emails) |
+| **High deliverability** | AWS infrastructure ensures reliable delivery |
+| **Scalable** | Handle from 1 to millions of emails |
+| **Integrated** | Uses same AWS credentials as S3 |
+| **Secure** | Built-in bounce/complaint handling, DKIM signing |
+
+### Email Service Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                        TRANSACTIONAL EMAIL FLOW                                     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+    ┌────────────┐         ┌────────────────┐         ┌─────────────────┐
+    │   Client   │         │  Next.js API   │         │    AWS SES      │
+    │  (App/Svc) │         │    Server      │         │   Email Svc     │
+    └─────┬──────┘         └───────┬────────┘         └────────┬────────┘
+          │                        │                           │
+          │  1. Send Email Request │                           │
+          │  POST /api/email       │                           │
+          │  {to, subject, message}│                           │
+          ├───────────────────────►│                           │
+          │                        │                           │
+          │                        │  2. Validate Request      │
+          │                        │  - Check email format     │
+          │                        │  - Validate template data │
+          │                        │  - Apply rate limits      │
+          │                        │                           │
+          │                        │  3. Generate HTML         │
+          │                        │     (if using template)   │
+          │                        │                           │
+          │                        │  4. Send via SES          │
+          │                        ├──────────────────────────►│
+          │                        │                           │
+          │                        │         5. Message ID     │
+          │                        │◄──────────────────────────┤
+          │                        │                           │
+          │  6. Return Result      │                           │
+          │  {messageId, status}   │           7. Deliver      │
+          │◄───────────────────────┤           to Inbox        │
+          │                        │                           │
+    ┌─────▼──────┐         ┌───────▼────────┐         ┌────────▼────────┐
+    │  ✅ Done!  │         │  Log Message   │         │  📨 Email       │
+    │  Track ID  │         │     ID         │         │  Delivered      │
+    └────────────┘         └────────────────┘         └─────────────────┘
+```
+
+### Environment Variables Setup
+
+Add these to your `.env` file:
+
+```bash
+# AWS SES Configuration (uses same AWS credentials as S3)
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_REGION=ap-south-1
+
+# Email sender (must be verified in AWS SES)
+SES_EMAIL_SENDER=no-reply@yourdomain.com
+```
+
+### AWS SES Setup
+
+#### 1. Verify Sender Identity
+
+In AWS SES Console → Verified Identities:
+
+**For Sandbox Mode (Testing):**
+- Verify both sender AND recipient email addresses
+- Each email must click the verification link
+
+**For Production Mode:**
+- Verify your domain (adds DNS records)
+- Request production access (removes sandbox restrictions)
+
+#### 2. Request Production Access (Optional)
+
+To send to any email address:
+1. Go to AWS SES Console → Account Dashboard
+2. Click "Request Production Access"
+3. Fill out the use case form
+4. Wait for AWS approval (usually 24 hours)
+
+### API Endpoints
+
+#### Get Email Service Status
+
+```bash
+# GET /api/email
+curl http://localhost:3000/api/email
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Email service configuration retrieved",
+  "data": {
+    "configured": true,
+    "provider": "AWS SES",
+    "region": "ap-south-1",
+    "senderConfigured": true,
+    "availableTemplates": [
+      "welcome",
+      "password_reset",
+      "email_verification",
+      "booking_confirmation",
+      "trip_reminder",
+      "notification"
+    ],
+    "rateLimits": {
+      "sandbox": { "maxPerSecond": 1, "maxPerDay": 200 },
+      "production": { "maxPerSecond": 14, "maxPerDay": 50000 }
+    }
+  }
+}
+```
+
+#### Send Custom Email
+
+```bash
+# POST /api/email
+curl -X POST http://localhost:3000/api/email \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "user@example.com",
+    "subject": "Hello from Travel Mate!",
+    "message": "<h2>Welcome!</h2><p>Thanks for joining us.</p>"
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Email sent successfully",
+  "data": {
+    "messageId": "0100018d1234abcd-12345678-1234-1234-1234-123456789abc-000000",
+    "to": "user@example.com",
+    "subject": "Hello from Travel Mate!",
+    "sentAt": "2026-01-22T10:00:00.000Z"
+  }
+}
+```
+
+#### Send Template Email
+
+```bash
+# POST /api/email?template=true
+curl -X POST "http://localhost:3000/api/email?template=true" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": "user@example.com",
+    "templateType": "welcome",
+    "templateData": {
+      "userName": "Alice",
+      "loginUrl": "https://travel-mate.com/login"
+    }
+  }'
+```
+
+### Available Email Templates
+
+#### 1. Welcome Email
+
+```json
+{
+  "templateType": "welcome",
+  "templateData": {
+    "userName": "Alice",
+    "loginUrl": "https://app.example.com/login"
+  }
+}
+```
+
+#### 2. Password Reset
+
+```json
+{
+  "templateType": "password_reset",
+  "templateData": {
+    "userName": "Alice",
+    "resetUrl": "https://app.example.com/reset?token=xyz",
+    "expiresIn": "1 hour"
+  }
+}
+```
+
+#### 3. Email Verification
+
+```json
+{
+  "templateType": "email_verification",
+  "templateData": {
+    "userName": "Alice",
+    "verificationUrl": "https://app.example.com/verify?code=123456",
+    "verificationCode": "123456"
+  }
+}
+```
+
+#### 4. Booking Confirmation
+
+```json
+{
+  "templateType": "booking_confirmation",
+  "templateData": {
+    "userName": "Alice",
+    "placeName": "Beachside Resort",
+    "checkIn": "January 25, 2026",
+    "checkOut": "January 30, 2026",
+    "guests": 2,
+    "totalAmount": "$450.00",
+    "bookingId": "BK-12345"
+  }
+}
+```
+
+#### 5. Trip Reminder
+
+```json
+{
+  "templateType": "trip_reminder",
+  "templateData": {
+    "userName": "Alice",
+    "tripName": "Bali Adventure",
+    "startDate": "February 1, 2026",
+    "destination": "Bali, Indonesia",
+    "daysUntil": 10
+  }
+}
+```
+
+#### 6. Notification
+
+```json
+{
+  "templateType": "notification",
+  "templateData": {
+    "userName": "Alice",
+    "title": "New Review on Your Place",
+    "message": "Someone left a 5-star review on your listing!",
+    "actionUrl": "https://app.example.com/reviews",
+    "actionText": "View Review"
+  }
+}
+```
+
+### Code Implementation
+
+#### SES Client Configuration (lib/ses.ts)
+
+```typescript
+import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
+
+export const SES_CONFIG = {
+  region: process.env.AWS_REGION || "ap-south-1",
+  senderEmail: process.env.SES_EMAIL_SENDER || "",
+};
+
+export const sendEmail = async (options: SendEmailOptions): Promise<SendEmailResult> => {
+  const sesClient = getSESClient();
+  
+  const command = new SendEmailCommand({
+    Source: SES_CONFIG.senderEmail,
+    Destination: { ToAddresses: [options.to] },
+    Message: {
+      Subject: { Data: options.subject },
+      Body: { Html: { Data: options.htmlBody } },
+    },
+  });
+
+  const response = await sesClient.send(command);
+  return { success: true, messageId: response.MessageId };
+};
+```
+
+#### Email API Route (app/api/email/route.ts)
+
+```typescript
+import { sendEmail, validateSESConfig } from "@/lib/ses";
+import { welcomeTemplate } from "@/lib/email-templates";
+
+export async function POST(req: Request) {
+  const { to, subject, message, templateType, templateData } = await req.json();
+
+  // Use template or custom message
+  const htmlContent = templateType 
+    ? generateTemplateContent(templateType, templateData)
+    : message;
+
+  const result = await sendEmail({
+    to,
+    subject,
+    htmlBody: htmlContent,
+  });
+
+  console.log("Email sent:", result.messageId);
+  return NextResponse.json({ success: true, messageId: result.messageId });
+}
+```
+
+#### Email Template Example (lib/email-templates.ts)
+
+```typescript
+export const welcomeTemplate = (userName: string, loginUrl?: string) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    .container { max-width: 600px; margin: 0 auto; }
+    .header { background: linear-gradient(135deg, #667eea, #764ba2); color: #fff; padding: 30px; }
+    .button { background: #667eea; color: #fff; padding: 12px 30px; border-radius: 25px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>🌍 Travel Mate</h1></div>
+    <div class="content">
+      <h2>Welcome aboard, ${userName}! 🎉</h2>
+      <p>We're thrilled to have you join the Travel Mate community!</p>
+      ${loginUrl ? `<a href="${loginUrl}" class="button">Start Exploring</a>` : ''}
+    </div>
+  </div>
+</body>
+</html>
+`;
+```
+
+### Sandbox vs Production Mode
+
+| Aspect | Sandbox | Production |
+| ------ | ------- | ---------- |
+| **Recipients** | Must be verified | Any valid email |
+| **Rate Limit** | 1 email/sec, 200/day | 14 emails/sec (adjustable) |
+| **Use Case** | Development/Testing | Live applications |
+| **Setup** | Automatic | Requires AWS approval |
+
+### Rate Limiting & Retries
+
+```typescript
+// Rate limit configuration
+const EMAIL_RATE_LIMITS = {
+  SANDBOX: { maxPerSecond: 1, maxPerDay: 200 },
+  PRODUCTION: { maxPerSecond: 14, maxPerDay: 50000 },
+};
+
+// Retry strategy for transient failures
+const sendWithRetry = async (emailOptions, maxRetries = 3) => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await sendEmail(emailOptions);
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+      await delay(Math.pow(2, attempt) * 1000); // Exponential backoff
+    }
+  }
+};
+```
+
+### Bounce & Complaint Handling
+
+Configure SNS notifications in AWS SES to handle:
+
+| Event Type | Description | Action |
+| ---------- | ----------- | ------ |
+| **Bounce** | Email couldn't be delivered | Remove from list, flag user |
+| **Complaint** | Recipient marked as spam | Immediately unsubscribe |
+| **Delivery** | Successfully delivered | Update delivery status |
+
+**Setup SNS Notifications:**
+
+1. Create SNS Topic for each event type
+2. Subscribe your webhook endpoint
+3. Configure SES to publish to these topics
+
+```typescript
+// Example webhook handler for bounces
+export async function POST(req: Request) {
+  const notification = await req.json();
+  
+  if (notification.notificationType === 'Bounce') {
+    const bouncedEmails = notification.bounce.bouncedRecipients
+      .map(r => r.emailAddress);
+    
+    await markEmailsAsBounced(bouncedEmails);
+  }
+}
+```
+
+### Delivery Monitoring
+
+Track email delivery through:
+
+1. **Message IDs** - Logged with each send for tracing
+2. **CloudWatch Metrics** - Delivery rate, bounces, complaints
+3. **SES Sending Statistics** - Daily/weekly reports
+4. **SNS Notifications** - Real-time delivery events
+
+### Testing Email Delivery
+
+```bash
+# 1. Check service configuration
+curl http://localhost:3000/api/email
+
+# 2. Send a test email (custom)
+curl -X POST http://localhost:3000/api/email \
+  -H "Content-Type: application/json" \
+  -d '{"to":"your-verified-email@example.com","subject":"Test Email","message":"<h2>Hello!</h2><p>This is a test.</p>"}'
+
+# 3. Send a template email
+curl -X POST "http://localhost:3000/api/email?template=true" \
+  -H "Content-Type: application/json" \
+  -d '{"to":"your-verified-email@example.com","templateType":"welcome","templateData":{"userName":"Test User"}}'
+
+# 4. Check console logs for Message ID
+# Output: Email sent: Message ID 0100018d1234abcd-...
+```
+
+### Security Considerations
+
+| Consideration | Implementation |
+| ------------- | -------------- |
+| **Credentials** | Stored in env vars, never in code |
+| **Rate Limiting** | Prevents abuse and cost overruns |
+| **Input Validation** | Zod schemas validate all requests |
+| **HTML Sanitization** | Templates prevent XSS in emails |
+| **Error Handling** | Graceful failures with logging |
+| **Sender Verification** | Only verified senders allowed |
+
+### Reflection on Email Service
+
+**Advantages of AWS SES:**
+- Same AWS account as S3 (simplified management)
+- Built-in metrics and monitoring
+- Scales automatically with demand
+- Cost-effective for transactional emails
+
+**Challenges & Solutions:**
+- **Sandbox limitations**: Request production access early
+- **Deliverability**: Use verified domain, set up DKIM/SPF
+- **Bounce handling**: Implement SNS webhook processing
+- **Rate limits**: Queue emails for large sends
+
+---
