@@ -422,3 +422,27 @@ enum PaymentMethod {
   PAYPAL
   WALLET
 }
+
+// ============================================
+// FILE MODEL - Uploaded file metadata storage
+// ============================================
+
+model File {
+  id          String      @id @default(uuid()) @db.Uuid
+  name        String      @db.VarChar(255)
+  url         String      @db.Text
+  key         String      @db.VarChar(500) // S3 key or Azure blob name
+  size        Int?        // File size in bytes
+  mimeType    String?     @db.VarChar(100)
+  uploadedBy  String?     @db.Uuid // Optional: User who uploaded the file
+  isPublic    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Indexes for common queries
+  @@index([name])
+  @@index([mimeType])
+  @@index([uploadedBy])
+  @@index([createdAt])
+  @@map("files")
+}

@@ -19,6 +19,8 @@
     "db:test": "npx tsx scripts/test-db-connection.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.972.0",
+    "@aws-sdk/s3-request-presigner": "^3.972.0",
     "@prisma/client": "^6.19.1",
     "bcrypt": "^6.0.0",
     "ioredis": "^5.9.2",

@@ -101,6 +101,18 @@ export const ERROR_CODES = {
   BOOKING_INVALID_DATES: "E656",
   BOOKING_ALREADY_COMPLETED: "E657",
   BOOKING_ALREADY_CANCELLED: "E658",
+
+  // File Upload Errors (E66X)
+  FILE_NOT_FOUND: "E660",
+  FILE_FETCH_ERROR: "E661",
+  FILE_CREATE_ERROR: "E662",
+  FILE_UPDATE_ERROR: "E663",
+  FILE_DELETE_ERROR: "E664",
+  FILE_UPLOAD_ERROR: "E665",
+  FILE_TYPE_NOT_ALLOWED: "E666",
+  FILE_SIZE_EXCEEDED: "E667",
+  FILE_ALREADY_EXISTS: "E668",
+  PRESIGNED_URL_ERROR: "E669",
 } as const;
 
 /**
@@ -199,6 +211,18 @@ export const ERROR_DESCRIPTIONS: Record<ErrorCode, string> = {
   E656: "Check-out date must be after check-in date",
   E657: "Cannot cancel a completed booking",
   E658: "Booking is already cancelled",
+
+  // File Upload Errors
+  E660: "File not found",
+  E661: "Failed to fetch file(s)",
+  E662: "Failed to create file record",
+  E663: "Failed to update file",
+  E664: "Failed to delete file",
+  E665: "File upload failed",
+  E666: "File type not allowed",
+  E667: "File size exceeds maximum limit",
+  E668: "File with this key already exists",
+  E669: "Failed to generate pre-signed URL",
 };
 
 /**
