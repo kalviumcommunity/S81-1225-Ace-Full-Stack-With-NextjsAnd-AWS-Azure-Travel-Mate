@@ -13,3 +13,4 @@ export * from "./review.schema";
 export * from "./category.schema";
 export * from "./auth.schema";
 export * from "./file.schema";
+export * from "./email.schema";

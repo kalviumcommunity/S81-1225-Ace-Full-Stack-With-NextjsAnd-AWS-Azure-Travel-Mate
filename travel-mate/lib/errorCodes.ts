@@ -113,6 +113,15 @@ export const ERROR_CODES = {
   FILE_SIZE_EXCEEDED: "E667",
   FILE_ALREADY_EXISTS: "E668",
   PRESIGNED_URL_ERROR: "E669",
+
+  // Email Errors (E67X)
+  EMAIL_SEND_ERROR: "E670",
+  EMAIL_TEMPLATE_ERROR: "E671",
+  EMAIL_VALIDATION_ERROR: "E672",
+  EMAIL_SERVICE_UNAVAILABLE: "E673",
+  EMAIL_RATE_LIMIT_EXCEEDED: "E674",
+  EMAIL_RECIPIENT_INVALID: "E675",
+  EMAIL_SENDER_NOT_VERIFIED: "E676",
 } as const;
 
 /**
@@ -223,6 +232,15 @@ export const ERROR_DESCRIPTIONS: Record<ErrorCode, string> = {
   E667: "File size exceeds maximum limit",
   E668: "File with this key already exists",
   E669: "Failed to generate pre-signed URL",
+
+  // Email Errors
+  E670: "Failed to send email",
+  E671: "Email template generation failed",
+  E672: "Invalid email request data",
+  E673: "Email service is unavailable",
+  E674: "Email rate limit exceeded",
+  E675: "Invalid recipient email address",
+  E676: "Sender email is not verified in SES",
 };
 
 /**
