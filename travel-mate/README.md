@@ -4427,3 +4427,461 @@ const skipCache = searchParams.get("_bypass_cache") === "true";
 ```
 
 ---
+
+## 📁 Secure File Uploads with Pre-Signed URLs
+
+This application implements secure file uploads using **AWS S3 pre-signed URLs**. This approach allows direct uploads from the client to cloud storage without exposing credentials or routing large files through your server.
+
+### Pre-Signed URL Upload Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                        PRE-SIGNED URL FILE UPLOAD FLOW                              │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+
+    ┌────────────┐         ┌────────────────┐         ┌─────────────────┐
+    │   Client   │         │  Next.js API   │         │     AWS S3      │
+    │  (Browser) │         │    Server      │         │    Storage      │
+    └─────┬──────┘         └───────┬────────┘         └────────┬────────┘
+          │                        │                           │
+          │  1. Request Upload URL │                           │
+          │  POST /api/upload      │                           │
+          │  {filename, fileType,  │                           │
+          │   fileSize}            │                           │
+          ├───────────────────────►│                           │
+          │                        │                           │
+          │                        │  2. Validate Request      │
+          │                        │  - Check file type        │
+          │                        │  - Check file size        │
+          │                        │  - Generate unique key    │
+          │                        │                           │
+          │                        │  3. Generate Pre-signed   │
+          │                        │     URL (60s expiry)      │
+          │                        ├──────────────────────────►│
+          │                        │                           │
+          │                        │◄──────────────────────────┤
+          │                        │     Pre-signed URL        │
+          │                        │                           │
+          │  4. Return Upload URL  │                           │
+          │  {uploadUrl, publicUrl,│                           │
+          │   key, expiresIn}      │                           │
+          │◄───────────────────────┤                           │
+          │                        │                           │
+          │  5. Upload File Directly to S3                     │
+          │  PUT <uploadUrl>                                   │
+          │  Content-Type: image/png                           │
+          │  [Binary File Data]                                │
+          ├───────────────────────────────────────────────────►│
+          │                        │                           │
+          │                        │           6. Store File   │
+          │                        │              Return 200   │
+          │◄───────────────────────────────────────────────────┤
+          │                        │                           │
+          │  7. Store Metadata     │                           │
+          │  POST /api/files       │                           │
+          │  {name, url, key,      │                           │
+          │   size, mimeType}      │                           │
+          ├───────────────────────►│                           │
+          │                        │                           │
+          │                        │  8. Save to Database      │
+          │                        │     (files table)         │
+          │                        │                           │
+          │  9. Return File Record │                           │
+          │◄───────────────────────┤                           │
+          │                        │                           │
+    ┌─────▼──────┐         ┌───────▼────────┐         ┌────────▼────────┐
+    │  ✅ Done!  │         │  Metadata in   │         │  File stored    │
+    │  File URL  │         │   Database     │         │  in S3 bucket   │
+    │  available │         │                │         │                 │
+    └────────────┘         └────────────────┘         └─────────────────┘
+```
+
+### Environment Variables Setup
+
+Add these to your `.env` file:
+
+```bash
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_REGION=ap-south-1
+AWS_BUCKET_NAME=your-bucket-name
+```
+
+### S3 Bucket Configuration
+
+For files to be publicly accessible, configure your S3 bucket:
+
+1. **Disable Block Public Access** (or use specific bucket policy)
+2. **Bucket Policy** for public read access:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadGetObject",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::your-bucket-name/*"
+    }
+  ]
+}
+```
+
+3. **CORS Configuration** for browser uploads:
+
+```json
+[
+  {
+    "AllowedHeaders": ["*"],
+    "AllowedMethods": ["PUT", "POST", "GET"],
+    "AllowedOrigins": ["http://localhost:3000", "https://your-domain.com"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+### API Endpoints
+
+#### Generate Pre-Signed URL
+
+```bash
+# POST /api/upload
+curl -X POST http://localhost:3000/api/upload \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filename": "profile.png",
+    "fileType": "image/png",
+    "fileSize": 102400
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Pre-signed upload URL generated successfully",
+  "data": {
+    "uploadUrl": "https://bucket.s3.region.amazonaws.com/uploads/1234-abc-profile.png?...",
+    "publicUrl": "https://bucket.s3.region.amazonaws.com/uploads/1234-abc-profile.png",
+    "key": "uploads/1234-abc-profile.png",
+    "expiresIn": 60,
+    "maxSize": 10485760,
+    "allowedTypes": ["image/jpeg", "image/png", ...]
+  },
+  "timestamp": "2026-01-22T10:00:00.000Z"
+}
+```
+
+#### Upload File to S3
+
+```bash
+# PUT the file directly to the pre-signed URL
+curl -X PUT "<uploadUrl>" \
+  -H "Content-Type: image/png" \
+  --upload-file "./profile.png"
+```
+
+#### Store File Metadata
+
+```bash
+# POST /api/files
+curl -X POST http://localhost:3000/api/files \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "profile.png",
+    "url": "https://bucket.s3.region.amazonaws.com/uploads/1234-abc-profile.png",
+    "key": "uploads/1234-abc-profile.png",
+    "size": 102400,
+    "mimeType": "image/png"
+  }'
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "File metadata stored successfully",
+  "data": {
+    "id": "uuid-here",
+    "name": "profile.png",
+    "url": "https://bucket.s3.region.amazonaws.com/uploads/1234-abc-profile.png",
+    "key": "uploads/1234-abc-profile.png",
+    "size": 102400,
+    "mimeType": "image/png",
+    "isPublic": true,
+    "createdAt": "2026-01-22T10:00:00.000Z"
+  }
+}
+```
+
+### File Type & Size Validation
+
+The system validates files before generating upload URLs:
+
+| Validation       | Rule                                              | Error Code |
+| ---------------- | ------------------------------------------------- | ---------- |
+| **File Type**    | Must be image (jpeg, png, gif, webp, svg) or document (pdf, doc, docx, xls, xlsx) | E666 |
+| **File Size**    | Maximum 10MB (10,485,760 bytes)                   | E667 |
+| **Filename**     | Only alphanumeric, dots, underscores, hyphens     | E100 |
+
+**Allowed MIME Types:**
+
+```typescript
+const ALLOWED_MIME_TYPES = [
+  // Images
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "image/svg+xml",
+  // Documents
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+];
+```
+
+### URL Expiry Duration
+
+| URL Type     | Expiry  | Reason                                                    |
+| ------------ | ------- | --------------------------------------------------------- |
+| **Upload**   | 60 sec  | Short window to prevent URL sharing/abuse                 |
+| **Download** | 1 hour  | Longer for user convenience (private files only)          |
+
+**Why 60 seconds for uploads?**
+
+- Prevents URL sharing with unauthorized users
+- Reduces window for potential abuse
+- Forces fresh credential generation for each upload
+- Sufficient time for typical file uploads
+
+### Public vs Private Access
+
+| Access Type   | Use Case                        | Configuration                    |
+| ------------- | ------------------------------- | -------------------------------- |
+| **Public**    | Profile images, public assets   | `ACL: "public-read"` on upload   |
+| **Private**   | Sensitive documents, user data  | Signed URLs for access           |
+
+**Security Considerations:**
+
+- Public files: Anyone with the URL can access
+- Private files: Require time-limited signed URLs to view
+- Consider encryption at rest for sensitive data
+- Use separate buckets for public vs private files
+
+### Lifecycle Policies
+
+Configure S3 lifecycle rules to manage storage costs and data hygiene:
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "DeleteOldUploads",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "uploads/"
+      },
+      "Expiration": {
+        "Days": 30
+      }
+    },
+    {
+      "ID": "MoveToGlacier",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "archives/"
+      },
+      "Transitions": [
+        {
+          "Days": 90,
+          "StorageClass": "GLACIER"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Lifecycle Management Benefits:**
+
+- **Cost Control**: Auto-delete temporary files after 30 days
+- **Data Hygiene**: Remove orphaned/unused files automatically
+- **Compliance**: Meet data retention requirements
+- **Storage Optimization**: Move cold data to cheaper storage tiers
+
+### Code Implementation
+
+#### S3 Client Configuration (lib/s3.ts)
+
+```typescript
+import { S3Client } from "@aws-sdk/client-s3";
+
+export const S3_CONFIG = {
+  region: process.env.AWS_REGION || "ap-south-1",
+  bucketName: process.env.AWS_BUCKET_NAME || "",
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
+};
+
+export const createS3Client = (): S3Client | null => {
+  if (!validateS3Config()) return null;
+
+  return new S3Client({
+    region: S3_CONFIG.region,
+    credentials: {
+      accessKeyId: S3_CONFIG.accessKeyId,
+      secretAccessKey: S3_CONFIG.secretAccessKey,
+    },
+  });
+};
+
+export const generateUniqueKey = (filename: string, folder = "uploads"): string => {
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, "_").toLowerCase();
+  return `${folder}/${timestamp}-${randomSuffix}-${sanitized}`;
+};
+```
+
+#### Pre-Signed URL Generation (app/api/upload/route.ts)
+
+```typescript
+import { PutObjectCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+
+export async function POST(req: Request) {
+  const { filename, fileType, fileSize } = await req.json();
+
+  // Validate file type and size
+  if (!ALLOWED_MIME_TYPES.includes(fileType)) {
+    return sendError("Unsupported file type", ERROR_CODES.FILE_TYPE_NOT_ALLOWED, 400);
+  }
+
+  if (fileSize > MAX_FILE_SIZE) {
+    return sendError("File too large", ERROR_CODES.FILE_SIZE_EXCEEDED, 400);
+  }
+
+  const key = generateUniqueKey(filename);
+
+  const command = new PutObjectCommand({
+    Bucket: S3_CONFIG.bucketName,
+    Key: key,
+    ContentType: fileType,
+    ACL: "public-read",
+  });
+
+  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 60 });
+  const publicUrl = getPublicFileUrl(key);
+
+  return sendSuccess({ uploadUrl, publicUrl, key, expiresIn: 60 });
+}
+```
+
+#### Store File Metadata (app/api/files/route.ts)
+
+```typescript
+export async function POST(req: Request) {
+  const { name, url, key, size, mimeType, uploadedBy } = await req.json();
+
+  const file = await prisma.file.create({
+    data: { name, url, key, size, mimeType, uploadedBy, isPublic: true },
+  });
+
+  return sendSuccess(file, "File metadata stored successfully", 201);
+}
+```
+
+### Frontend Upload Example
+
+```typescript
+// Example: Upload file from browser
+async function uploadFile(file: File) {
+  // 1. Get pre-signed URL
+  const response = await fetch("/api/upload", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      filename: file.name,
+      fileType: file.type,
+      fileSize: file.size,
+    }),
+  });
+
+  const { data } = await response.json();
+
+  // 2. Upload directly to S3
+  await fetch(data.uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": file.type },
+    body: file,
+  });
+
+  // 3. Store metadata in database
+  await fetch("/api/files", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: file.name,
+      url: data.publicUrl,
+      key: data.key,
+      size: file.size,
+      mimeType: file.type,
+    }),
+  });
+
+  return data.publicUrl;
+}
+```
+
+### Security Trade-offs
+
+| Trade-off                 | Consideration                                         |
+| ------------------------- | ----------------------------------------------------- |
+| Public file access        | Anyone with URL can view; use signed URLs for private |
+| Short URL expiry          | More secure but requires fresh URLs for retries       |
+| File type restrictions    | Limits flexibility but prevents malicious uploads     |
+| No server-side scanning   | Faster uploads but no malware scanning                |
+
+### Advantages of Pre-Signed URLs
+
+1. **Scalability**: Files go directly to S3, no server bottleneck
+2. **Security**: AWS credentials never exposed to client
+3. **Performance**: Large files don't consume server bandwidth
+4. **Cost**: Reduced server compute for file handling
+5. **Reliability**: S3's durability (99.999999999%) for file storage
+
+### Testing File Uploads
+
+```bash
+# 1. Get upload URL
+curl -X POST http://localhost:3000/api/upload \
+  -H "Content-Type: application/json" \
+  -d '{"filename":"test.png","fileType":"image/png","fileSize":1024}'
+
+# 2. Upload file (use the uploadUrl from response)
+curl -X PUT "<UPLOAD_URL>" \
+  -H "Content-Type: image/png" \
+  --upload-file "./test.png"
+
+# 3. Verify file is accessible
+curl -I "<PUBLIC_URL>"
+
+# 4. Store metadata
+curl -X POST http://localhost:3000/api/files \
+  -H "Content-Type: application/json" \
+  -d '{"name":"test.png","url":"<PUBLIC_URL>","key":"<KEY>","size":1024,"mimeType":"image/png"}'
+
+# 5. List stored files
+curl http://localhost:3000/api/files
+```
+
+---
