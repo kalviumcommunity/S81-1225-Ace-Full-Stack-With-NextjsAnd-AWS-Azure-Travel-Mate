@@ -4,7 +4,470 @@ A full-stack travel destination application built with Next.js, TypeScript, Post
 
 ---
 
-## �️ Routing Architecture
+## 🏗️ Component Architecture
+
+This application implements a reusable layout and component architecture for consistent, accessible, and scalable UI across all pages.
+
+### Component Hierarchy
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        RootLayout                           │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                    LayoutWrapper                       │  │
+│  │  ┌─────────────────────────────────────────────────┐  │  │
+│  │  │                    Header                        │  │  │
+│  │  │  [Logo] [Home] [Places] [Login] [Dashboard]     │  │  │
+│  │  └─────────────────────────────────────────────────┘  │  │
+│  │  ┌──────────┐  ┌────────────────────────────────────┐ │  │
+│  │  │ Sidebar  │  │              Main                  │ │  │
+│  │  │ Overview │  │                                    │ │  │
+│  │  │ Users    │  │  ┌──────────────────────────────┐  │ │  │
+│  │  │ Trips    │  │  │         Page Content          │  │ │  │
+│  │  │ Places   │  │  │  ┌─────┐  ┌─────┐  ┌─────┐   │  │ │  │
+│  │  │ Bookings │  │  │  │Card │  │Card │  │Card │   │  │ │  │
+│  │  │ Reports  │  │  │  └─────┘  └─────┘  └─────┘   │  │ │  │
+│  │  │ Settings │  │  │  ┌──────────────────────────┐│  │ │  │
+│  │  │          │  │  │  │  Button   Button         ││  │ │  │
+│  │  │          │  │  │  └──────────────────────────┘│  │ │  │
+│  │  └──────────┘  │  └──────────────────────────────┘  │ │  │
+│  │                └────────────────────────────────────┘ │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Component Folder Structure
+
+```
+components/
+├── layout/
+│   ├── Header.tsx          → Global navigation header
+│   ├── Header.stories.tsx  → Storybook stories
+│   ├── Sidebar.tsx         → Dashboard sidebar navigation
+│   ├── Sidebar.stories.tsx
+│   ├── LayoutWrapper.tsx   → Main layout container
+│   └── LayoutWrapper.stories.tsx
+├── ui/
+│   ├── Button.tsx          → Reusable button component
+│   ├── Button.stories.tsx
+│   ├── Card.tsx            → Flexible card container
+│   ├── Card.stories.tsx
+│   ├── Input.tsx           → Form input component
+│   └── Input.stories.tsx
+├── Navbar.tsx              → Existing navbar
+├── Footer.tsx              → Existing footer
+├── PlaceCard.tsx           → Place display card
+├── FileUpload.tsx          → File upload component
+├── ProfileUpload.tsx       → Profile image upload
+└── index.ts                → Barrel exports
+```
+
+---
+
+### Layout Components
+
+#### Header Component
+
+```typescript
+// components/layout/Header.tsx
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+interface NavLink {
+  href: string;
+  label: string;
+  icon: string;
+  protected?: boolean;
+}
+
+const navLinks: NavLink[] = [
+  { href: "/", label: "Home", icon: "🏠" },
+  { href: "/places", label: "Places", icon: "📍" },
+  { href: "/login", label: "Login", icon: "🔑" },
+  { href: "/dashboard", label: "Dashboard", icon: "📊", protected: true },
+  { href: "/users", label: "Users", icon: "👥", protected: true },
+];
+
+export default function Header() {
+  const pathname = usePathname();
+
+  const isActive = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname.startsWith(href);
+  };
+
+  return (
+    <header role="banner" className="sticky top-0 z-50 bg-gradient-to-r ...">
+      <nav aria-label="Main navigation">
+        <ul className="flex items-center gap-2">
+          {navLinks.map((link) => (
+            <li key={link.href}>
+              <Link
+                href={link.href}
+                aria-current={isActive(link.href) ? "page" : undefined}
+              >
+                <span aria-hidden="true">{link.icon}</span>
+                <span>{link.label}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </header>
+  );
+}
+```
+
+#### Sidebar Component
+
+```typescript
+// components/layout/Sidebar.tsx
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+
+interface SidebarProps {
+  collapsed?: boolean;
+  onToggle?: () => void;
+}
+
+const sidebarLinks = [
+  { href: "/dashboard", label: "Overview", icon: "📊" },
+  { href: "/users", label: "Users", icon: "👥", badge: 5 },
+  { href: "/trips", label: "Trips", icon: "✈️" },
+  { href: "/places", label: "Places", icon: "📍" },
+  { href: "/bookings", label: "Bookings", icon: "📅", badge: 3 },
+  { href: "/reports", label: "Reports", icon: "📈" },
+  { href: "/settings", label: "Settings", icon: "⚙️" },
+];
+
+export default function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
+  const pathname = usePathname();
+
+  return (
+    <aside role="complementary" aria-label="Sidebar navigation">
+      <nav>
+        <ul>
+          {sidebarLinks.map((link) => (
+            <li key={link.href}>
+              <Link href={link.href} aria-current={...}>
+                <span>{link.icon}</span>
+                {!collapsed && <span>{link.label}</span>}
+                {link.badge && <span>{link.badge}</span>}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </aside>
+  );
+}
+```
+
+#### LayoutWrapper Component
+
+```typescript
+// components/layout/LayoutWrapper.tsx
+"use client";
+
+import { useState } from "react";
+import { usePathname } from "next/navigation";
+import Header from "./Header";
+import Sidebar from "./Sidebar";
+
+interface LayoutWrapperProps {
+  children: React.ReactNode;
+  showSidebar?: boolean;
+}
+
+const SIDEBAR_ROUTES = ["/dashboard", "/users", "/trips", "/bookings"];
+
+export default function LayoutWrapper({ children, showSidebar }: LayoutWrapperProps) {
+  const pathname = usePathname();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  const shouldShowSidebar = showSidebar !== undefined
+    ? showSidebar
+    : SIDEBAR_ROUTES.some((route) => pathname.startsWith(route));
+
+  return (
+    <div className="flex flex-col min-h-screen">
+      {/* Skip link for accessibility */}
+      <a href="#main-content" className="sr-only focus:not-sr-only">
+        Skip to main content
+      </a>
+
+      <Header />
+
+      <div className="flex flex-1">
+        {shouldShowSidebar && (
+          <Sidebar
+            collapsed={sidebarCollapsed}
+            onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+          />
+        )}
+        <main id="main-content" role="main">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+### UI Components
+
+#### Button Component
+
+```typescript
+// components/ui/Button.tsx
+
+export interface ButtonProps {
+  label: string;
+  onClick?: () => void;
+  variant?: "primary" | "secondary" | "outline" | "ghost" | "danger";
+  size?: "sm" | "md" | "lg";
+  disabled?: boolean;
+  loading?: boolean;
+  icon?: React.ReactNode;
+  fullWidth?: boolean;
+  type?: "button" | "submit" | "reset";
+}
+
+export default function Button({
+  label,
+  onClick,
+  variant = "primary",
+  size = "md",
+  disabled = false,
+  loading = false,
+  ...props
+}: ButtonProps) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled || loading}
+      aria-busy={loading}
+      className="inline-flex items-center justify-center ..."
+    >
+      {loading && <span className="animate-spin" />}
+      {icon && <span>{icon}</span>}
+      <span>{label}</span>
+    </button>
+  );
+}
+```
+
+#### Card Component
+
+```typescript
+// components/ui/Card.tsx
+
+export interface CardProps {
+  children: React.ReactNode;
+  title?: string;
+  subtitle?: string;
+  headerAction?: React.ReactNode;
+  footer?: React.ReactNode;
+  variant?: "default" | "elevated" | "outlined";
+  padding?: "none" | "sm" | "md" | "lg";
+  hover?: boolean;
+  onClick?: () => void;
+}
+
+export default function Card({
+  children,
+  title,
+  subtitle,
+  headerAction,
+  footer,
+  variant = "default",
+  padding = "md",
+  ...props
+}: CardProps) {
+  return (
+    <article className="rounded-xl overflow-hidden ...">
+      {(title || headerAction) && (
+        <div className="flex items-start justify-between">
+          <div>
+            {title && <h3>{title}</h3>}
+            {subtitle && <p>{subtitle}</p>}
+          </div>
+          {headerAction}
+        </div>
+      )}
+      <div className={paddingStyles[padding]}>{children}</div>
+      {footer && <div>{footer}</div>}
+    </article>
+  );
+}
+```
+
+#### Input Component
+
+```typescript
+// components/ui/Input.tsx
+
+export interface InputProps {
+  label: string;
+  name: string;
+  type?: string;
+  placeholder?: string;
+  value?: string;
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  error?: string;
+  helperText?: string;
+  required?: boolean;
+  disabled?: boolean;
+  icon?: React.ReactNode;
+}
+
+export default function Input({
+  label,
+  name,
+  error,
+  helperText,
+  required,
+  ...props
+}: InputProps) {
+  const inputId = `input-${name}`;
+  const errorId = `${inputId}-error`;
+
+  return (
+    <div>
+      <label htmlFor={inputId}>
+        {label}
+        {required && <span aria-hidden="true">*</span>}
+      </label>
+      <input
+        id={inputId}
+        name={name}
+        aria-invalid={!!error}
+        aria-describedby={error ? errorId : undefined}
+        {...props}
+      />
+      {error && <p id={errorId} role="alert">{error}</p>}
+      {helperText && !error && <p>{helperText}</p>}
+    </div>
+  );
+}
+```
+
+---
+
+### Barrel Export
+
+```typescript
+// components/index.ts
+
+// Layout Components
+export { default as Header } from "./layout/Header";
+export { default as Sidebar } from "./layout/Sidebar";
+export { default as LayoutWrapper } from "./layout/LayoutWrapper";
+
+// UI Components
+export { default as Button } from "./ui/Button";
+export type { ButtonProps } from "./ui/Button";
+
+export { default as Card } from "./ui/Card";
+export type { CardProps } from "./ui/Card";
+
+export { default as Input } from "./ui/Input";
+export type { InputProps } from "./ui/Input";
+
+// Existing Components
+export { default as Navbar } from "./Navbar";
+export { default as Footer } from "./Footer";
+```
+
+---
+
+### Storybook Integration
+
+Run Storybook to preview components in isolation:
+
+```bash
+npm run storybook
+```
+
+This opens Storybook at `http://localhost:6006` where you can:
+- View all components organized by category (Layout, UI)
+- Test different props and variants
+- Check accessibility features
+- View component documentation
+
+---
+
+### Props Contracts
+
+Props contracts define the expected interface for each component, improving:
+
+| Benefit | Description |
+|---------|-------------|
+| **Type Safety** | TypeScript catches prop errors at compile time |
+| **Documentation** | Props serve as self-documenting API |
+| **IDE Support** | Autocomplete and inline documentation |
+| **Refactoring** | Safe changes with type checking |
+| **Testing** | Clear expectations for unit tests |
+
+---
+
+### Accessibility Practices
+
+| Practice | Implementation |
+|----------|----------------|
+| **Semantic HTML** | `<header>`, `<nav>`, `<main>`, `<aside>`, `<article>` |
+| **ARIA Labels** | `aria-label`, `aria-current`, `aria-describedby` |
+| **Keyboard Navigation** | Focus visible, skip links, tab order |
+| **Screen Readers** | `sr-only` classes, `aria-hidden` for decorative icons |
+| **Color Contrast** | WCAG AA compliant color combinations |
+| **Focus Management** | `tabIndex={-1}` on main content for skip links |
+| **Error Announcements** | `role="alert"` for form errors |
+
+---
+
+### Visual Consistency & Theming
+
+The component library follows a consistent design system:
+
+- **Colors**: Slate, Blue, Purple, Green, Red from Tailwind
+- **Spacing**: Consistent padding/margins using Tailwind scale
+- **Typography**: Geist font family (Sans and Mono)
+- **Borders**: Rounded corners (lg, xl) and subtle borders
+- **Shadows**: Subtle elevation for cards and dropdowns
+- **Transitions**: 200ms duration for smooth interactions
+
+---
+
+### Reflection
+
+#### Scalability Benefits
+
+1. **Reusable Components**: Build once, use everywhere
+2. **Consistent UX**: Same patterns across all pages
+3. **Easy Maintenance**: Update component, all instances update
+4. **Team Productivity**: Developers work faster with predefined components
+5. **Design System**: Components enforce brand consistency
+
+#### Trade-offs
+
+| Customization | Simplicity |
+|---------------|------------|
+| More props = more flexibility | More props = more complexity |
+| Custom variants | Predefined styles |
+| Per-instance overrides | Consistent defaults |
+
+**Balance achieved**: Components have sensible defaults with optional customization props.
+
+---
+
+## 🛤️ Routing Architecture
 
 This application implements a comprehensive routing system using the Next.js App Router, featuring public routes, protected routes, and dynamic segments.
 

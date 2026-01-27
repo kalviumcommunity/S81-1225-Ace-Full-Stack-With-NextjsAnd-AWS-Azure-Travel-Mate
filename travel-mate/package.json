@@ -10,6 +10,8 @@
     "start": "next start",
     "lint": "eslint",
     "prepare": "husky install",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
@@ -34,6 +36,10 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
+    "@storybook/addon-essentials": "^8.4.0",
+    "@storybook/addon-links": "^8.4.0",
+    "@storybook/nextjs": "^8.4.0",
+    "@storybook/react": "^8.4.0",
     "@tailwindcss/postcss": "^4",
     "@types/bcrypt": "^6.0.0",
     "@types/js-cookie": "^3.0.6",
@@ -50,6 +56,7 @@
     "lint-staged": "^16.2.7",
     "prettier": "^3.7.4",
     "prisma": "^6.19.1",
+    "storybook": "^8.4.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"
