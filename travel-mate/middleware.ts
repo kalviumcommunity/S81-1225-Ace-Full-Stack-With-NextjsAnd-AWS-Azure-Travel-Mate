@@ -208,6 +208,26 @@ function createForbiddenResponse(message: string): NextResponse {
 }
 
 // ============================================
+// FRONTEND PROTECTED ROUTES
+// ============================================
+
+/**
+ * Frontend routes that require authentication
+ * These routes will redirect to login if no token is present
+ */
+const PROTECTED_FRONTEND_ROUTES: RegExp[] = [
+  /^\/dashboard(\/.*)?$/,
+  /^\/users(\/.*)?$/,
+];
+
+/**
+ * Check if the current path is a protected frontend route
+ */
+function isProtectedFrontendRoute(pathname: string): boolean {
+  return PROTECTED_FRONTEND_ROUTES.some((pattern) => pattern.test(pathname));
+}
+
+// ============================================
 // MIDDLEWARE FUNCTION
 // ============================================
 
@@ -264,7 +284,35 @@ function createForbiddenResponse(message: string): NextResponse {
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
-  // Skip middleware for non-API routes
+  // ========================================
+  // FRONTEND ROUTE PROTECTION
+  // ========================================
+
+  // Check if this is a protected frontend route
+  if (isProtectedFrontendRoute(pathname)) {
+    // Check for token in cookies (set by client-side login)
+    const token = request.cookies.get("token")?.value;
+
+    if (!token) {
+      // Redirect to login if no token
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    try {
+      // Verify the token
+      await jwtVerify(token, JWT_SECRET);
+      return NextResponse.next();
+    } catch {
+      // Invalid token - redirect to login
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+  }
+
+  // ========================================
+  // API ROUTE PROTECTION
+  // ========================================
+
+  // Skip middleware for non-API routes (public pages like /, /login, /about)
   if (!pathname.startsWith("/api")) {
     return NextResponse.next();
   }
@@ -349,6 +397,9 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
  */
 export const config = {
   matcher: [
+    // Match protected frontend routes
+    "/dashboard/:path*",
+    "/users/:path*",
     // Match all API routes
     "/api/:path*",
   ],

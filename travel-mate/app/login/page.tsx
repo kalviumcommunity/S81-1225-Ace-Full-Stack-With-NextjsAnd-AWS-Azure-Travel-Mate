@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,6 +13,19 @@ export default function LoginPage() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Quick mock login for demonstration
+  const handleQuickLogin = () => {
+    // Create a mock JWT token for demo purposes
+    const mockToken =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjEiLCJlbWFpbCI6ImRlbW9AZXhhbXBsZS5jb20iLCJuYW1lIjoiRGVtbyBVc2VyIiwicm9sZSI6IlVTRVIiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTgwMDAwMDAwMH0.demo-signature";
+
+    // Set cookie for middleware authentication
+    Cookies.set("token", mockToken, { expires: 7 }); // Expires in 7 days
+
+    // Redirect to dashboard
+    router.push("/dashboard");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +49,9 @@ export default function LoginPage() {
       localStorage.setItem("accessToken", data.data.accessToken);
       localStorage.setItem("refreshToken", data.data.refreshToken);
 
+      // Also set cookie for middleware authentication
+      Cookies.set("token", data.data.accessToken, { expires: 7 });
+
       // Redirect to dashboard
       router.push("/dashboard");
     } catch (err) {
@@ -54,6 +71,46 @@ export default function LoginPage() {
           </Link>
           <p className="auth-subtitle">Log in to your Travel Mate account</p>
         </div>
+
+        {/* Quick Demo Login */}
+        <div
+          style={{
+            padding: "1rem",
+            background:
+              "linear-gradient(135deg, rgb(59 130 246 / 0.1), rgb(147 51 234 / 0.1))",
+            border: "1px solid rgb(59 130 246 / 0.3)",
+            borderRadius: "var(--radius)",
+            marginBottom: "1.5rem",
+          }}
+        >
+          <p
+            style={{
+              fontSize: "0.875rem",
+              color: "var(--foreground)",
+              marginBottom: "0.75rem",
+            }}
+          >
+            <strong>🚀 Quick Demo:</strong> Skip the form and login instantly
+          </p>
+          <button
+            type="button"
+            onClick={handleQuickLogin}
+            style={{
+              width: "100%",
+              padding: "0.75rem",
+              background: "linear-gradient(135deg, #3b82f6, #9333ea)",
+              color: "white",
+              border: "none",
+              borderRadius: "var(--radius)",
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            ⚡ Quick Login (Demo)
+          </button>
+        </div>
+
+        <div className="auth-divider">or login with credentials</div>
 
         {error && (
           <div
