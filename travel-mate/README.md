@@ -736,7 +736,435 @@ Authenticated User → /dashboard → Access Granted
 
 ---
 
-## �🔐 Input Validation with Zod
+## 🧠 State Management with Context API
+
+This application implements global state management using React Context API and custom hooks, providing centralized control over authentication and UI state across all components.
+
+### Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Providers                             │
+│  ┌───────────────────────────────────────────────────────┐  │
+│  │                    AuthProvider                        │  │
+│  │  • user: User | null                                   │  │
+│  │  • isAuthenticated: boolean                            │  │
+│  │  • isLoading: boolean                                  │  │
+│  │  • login(username, email?) → void                      │  │
+│  │  • logout() → void                                     │  │
+│  │  ┌─────────────────────────────────────────────────┐  │  │
+│  │  │                   UIProvider                     │  │  │
+│  │  │  • theme: "light" | "dark"                       │  │  │
+│  │  │  • sidebarOpen: boolean                          │  │  │
+│  │  │  • isLoading: boolean                            │  │  │
+│  │  │  • toasts: Toast[]                               │  │  │
+│  │  │  • toggleTheme() → void                          │  │  │
+│  │  │  • toggleSidebar() → void                        │  │  │
+│  │  │  • addToast(toast) → void                        │  │  │
+│  │  │  ┌─────────────────────────────────────────┐    │  │  │
+│  │  │  │          App Components                  │    │  │  │
+│  │  │  │   useAuth() ←── AuthContext              │    │  │  │
+│  │  │  │   useUI() ←── UIContext                  │    │  │  │
+│  │  │  └─────────────────────────────────────────┘    │  │  │
+│  │  └─────────────────────────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Folder Structure
+
+```
+travel-mate/
+├── app/
+│   ├── providers.tsx        → Client-side providers wrapper
+│   ├── layout.tsx           → Root layout with Providers
+│   └── state-demo/
+│       └── page.tsx         → Demo page for context usage
+├── context/
+│   ├── AuthContext.tsx      → Authentication context & provider
+│   ├── UIContext.tsx        → UI state context & provider
+│   └── index.ts             → Barrel exports
+└── hooks/
+    ├── useAuth.ts           → Custom hook for auth utilities
+    ├── useUI.ts             → Custom hook for UI utilities
+    └── index.ts             → Barrel exports
+```
+
+---
+
+### Context Implementation
+
+#### AuthContext
+
+```typescript
+// context/AuthContext.tsx
+"use client";
+
+import { createContext, useContext, useState, useMemo, useCallback } from "react";
+
+export interface User {
+  id: string;
+  username: string;
+  email: string;
+  role: "user" | "admin" | "moderator";
+  avatarUrl?: string;
+}
+
+interface AuthContextType {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (username: string, email?: string) => void;
+  logout: () => void;
+  updateUser: (updates: Partial<User>) => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const login = useCallback((username: string, email?: string) => {
+    setIsLoading(true);
+    // Simulate API call
+    setTimeout(() => {
+      const newUser: User = {
+        id: `user-${Date.now()}`,
+        username,
+        email: email || `${username.toLowerCase()}@example.com`,
+        role: email?.includes("admin") ? "admin" : "user",
+      };
+      setUser(newUser);
+      setIsLoading(false);
+      console.log("✅ User logged in:", username);
+    }, 500);
+  }, []);
+
+  const logout = useCallback(() => {
+    console.log("🚪 User logged out:", user?.username);
+    setUser(null);
+  }, [user?.username]);
+
+  // Memoize context value to prevent unnecessary re-renders
+  const value = useMemo(() => ({
+    user,
+    isAuthenticated: !!user,
+    isLoading,
+    login,
+    logout,
+    updateUser: (updates: Partial<User>) => 
+      setUser((prev) => (prev ? { ...prev, ...updates } : null)),
+  }), [user, isLoading, login, logout]);
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuthContext() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuthContext must be used within an AuthProvider");
+  }
+  return context;
+}
+```
+
+#### UIContext
+
+```typescript
+// context/UIContext.tsx
+"use client";
+
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from "react";
+
+type Theme = "light" | "dark";
+type ToastType = "success" | "error" | "warning" | "info";
+
+interface Toast {
+  id: string;
+  message: string;
+  type: ToastType;
+}
+
+interface UIContextType {
+  theme: Theme;
+  toggleTheme: () => void;
+  sidebarOpen: boolean;
+  openSidebar: () => void;
+  closeSidebar: () => void;
+  toggleSidebar: () => void;
+  isLoading: boolean;
+  setGlobalLoading: (loading: boolean) => void;
+  toasts: Toast[];
+  addToast: (message: string, type: ToastType) => void;
+  removeToast: (id: string) => void;
+}
+
+const UIContext = createContext<UIContextType | undefined>(undefined);
+
+export function UIProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>("light");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Persist theme preference
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme") as Theme;
+    if (savedTheme) setTheme(savedTheme);
+  }, []);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => {
+      const newTheme = prev === "light" ? "dark" : "light";
+      localStorage.setItem("theme", newTheme);
+      console.log("🎨 Theme toggled to:", newTheme);
+      return newTheme;
+    });
+  }, []);
+
+  const addToast = useCallback((message: string, type: ToastType) => {
+    const id = `toast-${Date.now()}`;
+    setToasts((prev) => [...prev, { id, message, type }]);
+    console.log(`🔔 Toast added [${type}]:`, message);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
+  }, []);
+
+  const value = useMemo(() => ({
+    theme,
+    toggleTheme,
+    sidebarOpen,
+    openSidebar: () => {
+      setSidebarOpen(true);
+      console.log("📂 Sidebar opened");
+    },
+    closeSidebar: () => {
+      setSidebarOpen(false);
+      console.log("📁 Sidebar closed");
+    },
+    toggleSidebar: () => setSidebarOpen((prev) => !prev),
+    isLoading,
+    setGlobalLoading: setIsLoading,
+    toasts,
+    addToast,
+    removeToast: (id: string) => setToasts((prev) => prev.filter((t) => t.id !== id)),
+  }), [theme, toggleTheme, sidebarOpen, isLoading, toasts, addToast]);
+
+  return <UIContext.Provider value={value}>{children}</UIContext.Provider>;
+}
+
+export function useUIContext() {
+  const context = useContext(UIContext);
+  if (!context) {
+    throw new Error("useUIContext must be used within a UIProvider");
+  }
+  return context;
+}
+```
+
+---
+
+### Custom Hooks
+
+#### useAuth Hook
+
+```typescript
+// hooks/useAuth.ts
+"use client";
+
+import { useAuthContext } from "@/context/AuthContext";
+
+export function useAuth() {
+  const context = useAuthContext();
+
+  // Derived state utilities
+  const hasRole = (role: string) => context.user?.role === role;
+  const isAdmin = context.user?.role === "admin";
+  const isModerator = context.user?.role === "moderator";
+  const displayName = context.user?.username || "Guest";
+  const userInitials = context.user?.username
+    ?.split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "?";
+
+  return {
+    ...context,
+    hasRole,
+    isAdmin,
+    isModerator,
+    displayName,
+    userInitials,
+  };
+}
+```
+
+#### useUI Hook
+
+```typescript
+// hooks/useUI.ts
+"use client";
+
+import { useUIContext } from "@/context/UIContext";
+
+export function useUI() {
+  const context = useUIContext();
+
+  // Derived state utilities
+  const isDarkMode = context.theme === "dark";
+  const themeIcon = isDarkMode ? "🌙" : "☀️";
+  const themeClasses = isDarkMode
+    ? "bg-gray-900 text-white"
+    : "bg-white text-gray-900";
+
+  // Toast helper functions
+  const showSuccess = (message: string) => context.addToast(message, "success");
+  const showError = (message: string) => context.addToast(message, "error");
+  const showWarning = (message: string) => context.addToast(message, "warning");
+  const showInfo = (message: string) => context.addToast(message, "info");
+
+  return {
+    ...context,
+    isDarkMode,
+    themeIcon,
+    themeClasses,
+    showSuccess,
+    showError,
+    showWarning,
+    showInfo,
+  };
+}
+```
+
+---
+
+### Provider Setup
+
+```typescript
+// app/providers.tsx
+"use client";
+
+import { AuthProvider } from "@/context/AuthContext";
+import { UIProvider } from "@/context/UIContext";
+
+interface ProvidersProps {
+  children: React.ReactNode;
+}
+
+export default function Providers({ children }: ProvidersProps) {
+  return (
+    <AuthProvider>
+      <UIProvider>{children}</UIProvider>
+    </AuthProvider>
+  );
+}
+```
+
+```typescript
+// app/layout.tsx
+import Providers from "./providers";
+import { LayoutWrapper } from "@/components";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <Providers>
+          <LayoutWrapper>{children}</LayoutWrapper>
+        </Providers>
+      </body>
+    </html>
+  );
+}
+```
+
+---
+
+### Demo Page Usage
+
+Visit `/state-demo` to see context in action:
+
+```typescript
+// app/state-demo/page.tsx
+"use client";
+
+import { useAuth } from "@/hooks/useAuth";
+import { useUI } from "@/hooks/useUI";
+
+export default function StateManagementDemo() {
+  const { user, isAuthenticated, login, logout, displayName } = useAuth();
+  const { theme, toggleTheme, isDarkMode, showSuccess } = useUI();
+
+  return (
+    <div className={isDarkMode ? "bg-gray-900 text-white" : "bg-white"}>
+      <h1>State Management Demo</h1>
+      
+      {/* Auth Controls */}
+      {isAuthenticated ? (
+        <>
+          <p>Welcome, {displayName}!</p>
+          <button onClick={logout}>Logout</button>
+        </>
+      ) : (
+        <button onClick={() => login("TravelUser")}>Login</button>
+      )}
+      
+      {/* Theme Toggle */}
+      <button onClick={toggleTheme}>
+        {isDarkMode ? "🌙 Dark" : "☀️ Light"}
+      </button>
+    </div>
+  );
+}
+```
+
+---
+
+### Expected Console Logs
+
+When interacting with the demo page, the following logs appear in the browser console:
+
+```
+✅ User logged in: TravelUser
+   User ID: user-1706352000000
+   Email: traveluser@example.com
+🎨 Theme toggled to: dark
+📂 Sidebar opened
+🔔 Toast added [success]: Welcome back!
+🚪 User logged out: TravelUser
+```
+
+---
+
+### Performance Optimization
+
+| Technique | Purpose |
+|-----------|---------|
+| **useMemo** | Memoize context value object to prevent re-renders |
+| **useCallback** | Memoize callback functions passed to children |
+| **Separate Contexts** | Split auth and UI to minimize re-render scope |
+| **Provider Composition** | Nest providers for clean separation of concerns |
+| **Lazy State Updates** | Batch state updates in callbacks |
+
+---
+
+### Benefits of This Approach
+
+| Benefit | Description |
+|---------|-------------|
+| **Type Safety** | Full TypeScript support with interfaces |
+| **Centralized State** | Single source of truth for auth and UI |
+| **Easy Testing** | Mock contexts for unit tests |
+| **No External Dependencies** | Pure React, no Redux/Zustand required |
+| **SSR Compatible** | Works with Next.js App Router |
+| **Extensible** | Easy to add new contexts or state |
+
+---
+
+## 🔐 Input Validation with Zod
 
 This application uses **Zod**, a TypeScript-first schema validation library, to validate all incoming API requests. Zod ensures that POST and PUT requests receive valid, well-structured data—preventing bad inputs from corrupting the database or crashing the API.
 
