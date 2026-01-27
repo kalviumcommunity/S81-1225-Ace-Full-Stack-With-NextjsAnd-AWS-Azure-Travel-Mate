@@ -1,5 +1,6 @@
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import ProfileUpload from "@/components/ProfileUpload";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic"; // SSR always
@@ -185,23 +186,11 @@ export default async function DashboardPage() {
                 flexWrap: "wrap",
               }}
             >
-              {/* Avatar */}
-              <div
-                style={{
-                  width: "80px",
-                  height: "80px",
-                  borderRadius: "var(--radius-full)",
-                  background: "var(--gradient-primary)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "2rem",
-                  fontWeight: 700,
-                  color: "white",
-                }}
-              >
-                {data.user.avatar}
-              </div>
+              {/* Avatar with Upload */}
+              <ProfileUpload
+                currentAvatar={data.user.avatar}
+                userName={data.user.name}
+              />
               <div>
                 <h1 className="dashboard-title">
                   Welcome back, {data.user.name}! 👋

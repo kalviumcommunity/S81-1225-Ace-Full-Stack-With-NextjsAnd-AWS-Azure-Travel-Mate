@@ -41,12 +41,23 @@ export default function SignupPage() {
           name: formData.name,
           email: formData.email,
           password: formData.password,
+          confirmPassword: formData.confirmPassword,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
+        // Handle validation errors with detailed messages
+        if (data.error?.details && Array.isArray(data.error.details)) {
+          const errorMessages = data.error.details
+            .map(
+              (err: { field: string; message: string }) =>
+                `${err.field}: ${err.message}`
+            )
+            .join("; ");
+          throw new Error(errorMessages || data.message || "Signup failed");
+        }
         throw new Error(data.message || "Signup failed");
       }
 

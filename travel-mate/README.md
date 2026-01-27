@@ -4,7 +4,276 @@ A full-stack travel destination application built with Next.js, TypeScript, Post
 
 ---
 
-## 🔐 Input Validation with Zod
+## �️ Routing Architecture
+
+This application implements a comprehensive routing system using the Next.js App Router, featuring public routes, protected routes, and dynamic segments.
+
+### Route Map
+
+```
+app/
+├── page.tsx                → 🌐 Home (Public)
+├── login/
+│   └── page.tsx           → 🔑 Login (Public)
+├── signup/
+│   └── page.tsx           → 📝 Signup (Public)
+├── about/
+│   └── page.tsx           → ℹ️ About (Public)
+├── places/
+│   ├── page.tsx           → 📍 Places List (Public)
+│   └── [slug]/
+│       └── page.tsx       → 📍 Place Details (Public, Dynamic)
+├── dashboard/
+│   └── page.tsx           → 📊 Dashboard (Protected)
+├── users/
+│   ├── page.tsx           → 👥 User List (Protected)
+│   └── [id]/
+│       └── page.tsx       → 👤 User Profile (Protected, Dynamic)
+├── trips/
+│   └── page.tsx           → ✈️ Trips (Protected)
+├── not-found.tsx          → 🚫 Custom 404 Page
+├── error.tsx              → ⚠️ Error Boundary
+└── layout.tsx             → 🧭 Navigation Layout
+```
+
+### Route Categories
+
+| Route | Type | Auth Required | Description |
+|-------|------|---------------|-------------|
+| `/` | Public | No | Home page with app overview |
+| `/login` | Public | No | User authentication |
+| `/signup` | Public | No | User registration |
+| `/about` | Public | No | About the application |
+| `/places` | Public | No | Browse destinations |
+| `/places/[slug]` | Public (Dynamic) | No | Individual place details |
+| `/dashboard` | Protected | Yes | User dashboard |
+| `/users` | Protected | Yes | User directory |
+| `/users/[id]` | Protected (Dynamic) | Yes | Individual user profile |
+| `/trips` | Protected | Yes | Trip management |
+
+---
+
+### Middleware Configuration
+
+The middleware handles authentication for both API routes and frontend pages:
+
+```typescript
+// middleware.ts
+
+import { NextRequest, NextResponse } from "next/server";
+import { jwtVerify } from "jose";
+
+const JWT_SECRET = new TextEncoder().encode(
+  process.env.JWT_SECRET || "your-super-secret-jwt-key-change-in-production"
+);
+
+/**
+ * Frontend routes that require authentication
+ */
+const PROTECTED_FRONTEND_ROUTES: RegExp[] = [
+  /^\/dashboard(\/.*)?$/,
+  /^\/users(\/.*)?$/,
+];
+
+function isProtectedFrontendRoute(pathname: string): boolean {
+  return PROTECTED_FRONTEND_ROUTES.some((pattern) => pattern.test(pathname));
+}
+
+export async function middleware(request: NextRequest): Promise<NextResponse> {
+  const { pathname } = request.nextUrl;
+
+  // Check if this is a protected frontend route
+  if (isProtectedFrontendRoute(pathname)) {
+    const token = request.cookies.get("token")?.value;
+
+    if (!token) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+
+    try {
+      await jwtVerify(token, JWT_SECRET);
+      return NextResponse.next();
+    } catch {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: [
+    "/dashboard/:path*",
+    "/users/:path*",
+    "/api/:path*",
+  ],
+};
+```
+
+---
+
+### Dynamic Route Implementation
+
+Dynamic routes use Next.js `[param]` segments to render content based on URL parameters:
+
+```typescript
+// app/users/[id]/page.tsx
+
+import Link from "next/link";
+import { Metadata } from "next";
+import { notFound } from "next/navigation";
+
+interface Props {
+  params: Promise<{ id: string }>;
+}
+
+// Generate dynamic SEO metadata
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { id } = await params;
+  const user = await fetchUser(id);
+  
+  if (!user) {
+    return { title: "User Not Found | Travel Mate" };
+  }
+
+  return {
+    title: `${user.name} - User Profile | Travel Mate`,
+    description: user.bio,
+  };
+}
+
+export default async function UserProfilePage({ params }: Props) {
+  const { id } = await params;
+  const user = await fetchUser(id);
+
+  if (!user) {
+    notFound();
+  }
+
+  return (
+    <main className="p-6">
+      {/* Breadcrumbs */}
+      <nav aria-label="Breadcrumb">
+        <ol className="flex items-center gap-2">
+          <li><Link href="/">Home</Link></li>
+          <li>/</li>
+          <li><Link href="/users">Users</Link></li>
+          <li>/</li>
+          <li>{user.name}</li>
+        </ol>
+      </nav>
+
+      <h1>{user.name}</h1>
+      <p>User ID: {id}</p>
+    </main>
+  );
+}
+```
+
+---
+
+### Navigation Layout
+
+The root layout includes a global navigation bar:
+
+```typescript
+// app/layout.tsx
+
+import Link from "next/link";
+
+export const metadata = {
+  title: "Travel Mate | Your Smart Travel Companion",
+  description: "Discover amazing destinations and plan your trips",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <nav className="flex gap-4 p-4 bg-gray-100">
+          {/* Public Routes */}
+          <Link href="/">🏠 Home</Link>
+          <Link href="/login">🔑 Login</Link>
+          
+          {/* Protected Routes */}
+          <Link href="/dashboard">📊 Dashboard</Link>
+          <Link href="/users">👥 Users</Link>
+          <Link href="/users/1">👤 User 1</Link>
+        </nav>
+        {children}
+      </body>
+    </html>
+  );
+}
+```
+
+---
+
+### Custom 404 Page
+
+```typescript
+// app/not-found.tsx
+
+import Link from "next/link";
+
+export default function NotFound() {
+  return (
+    <main className="flex flex-col items-center mt-10 text-red-600">
+      <span style={{ fontSize: "6rem" }}>🗺️</span>
+      <h1 className="text-2xl font-bold">404 — Page Not Found</h1>
+      <p>Looks like you've ventured off the beaten path.</p>
+      <Link href="/">Back to Home</Link>
+    </main>
+  );
+}
+```
+
+---
+
+### Screenshots
+
+#### Navigation Behavior
+- **Public Routes**: Home (`/`) and Login (`/login`) are accessible without authentication
+- **Protected Routes**: Dashboard (`/dashboard`) and Users (`/users`) redirect to login if not authenticated
+- **Dynamic Routes**: User profiles (`/users/1`, `/users/2`) load content based on URL parameter
+
+#### Redirect Flow
+```
+Unauthenticated User → /dashboard → Redirected to /login
+Authenticated User → /dashboard → Access Granted
+```
+
+---
+
+### Reflection
+
+#### SEO Advantages of Next.js App Router
+
+1. **Server-Side Rendering (SSR)**: Pages are rendered on the server, providing complete HTML to search engine crawlers
+2. **Dynamic Metadata**: Each page can export a `generateMetadata` function for dynamic SEO tags
+3. **Static Generation**: Popular routes can be pre-rendered at build time using `generateStaticParams`
+4. **Semantic URLs**: Dynamic segments create clean, readable URLs (`/users/1` instead of `?id=1`)
+5. **Built-in Head Management**: The `metadata` export handles `<title>`, `<meta>`, and Open Graph tags
+
+#### How Breadcrumbs Improve Navigation
+
+1. **Wayfinding**: Users always know their location within the site hierarchy
+2. **Quick Navigation**: One-click access to parent pages without using the back button
+3. **SEO Benefit**: Search engines understand site structure through breadcrumb schema
+4. **Reduced Bounce Rate**: Users can easily explore related content instead of leaving
+5. **Accessibility**: Screen readers can announce the navigation path
+
+#### Handling Route-Level Error States
+
+1. **`not-found.tsx`**: Catches invalid routes and displays a friendly 404 page
+2. **`error.tsx`**: Client-side error boundary for runtime errors
+3. **`loading.tsx`**: Shows loading states during page transitions
+4. **Try-Catch in Server Components**: Handle data fetching errors gracefully
+5. **Middleware Redirects**: Redirect unauthorized users before they reach protected pages
+
+---
+
+## �🔐 Input Validation with Zod
 
 This application uses **Zod**, a TypeScript-first schema validation library, to validate all incoming API requests. Zod ensures that POST and PUT requests receive valid, well-structured data—preventing bad inputs from corrupting the database or crashing the API.
 
