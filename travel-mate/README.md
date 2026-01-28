@@ -467,7 +467,187 @@ The component library follows a consistent design system:
 
 ---
 
-## 🛤️ Routing Architecture
+## � Environment Variable Management
+
+This project uses Next.js environment variable support to securely manage configuration and secrets across different environments.
+
+### File Structure
+
+```
+travel-mate/
+├── .env.example      → Template with placeholders (committed to git)
+├── .env.local        → Real secrets for local dev (NEVER committed)
+├── .env.development  → Development overrides (optional)
+├── .env.production   → Production overrides (optional)
+└── .gitignore        → Ensures .env.local is excluded
+```
+
+### Environment Variable Reference
+
+#### 🔒 Server-Only Variables
+
+These variables are only accessible on the server (API routes, server components, middleware). They are **never** exposed to the browser.
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://user:pass@host:5432/db` |
+| `REDIS_URL` | Redis connection URL for caching | `redis://localhost:6379` |
+| `JWT_SECRET` | Secret key for signing access tokens | `openssl rand -base64 64` |
+| `JWT_REFRESH_SECRET` | Secret key for signing refresh tokens | `openssl rand -base64 64` |
+| `AWS_ACCESS_KEY_ID` | AWS IAM access key | `AKIAIOSFODNN7EXAMPLE` |
+| `AWS_SECRET_ACCESS_KEY` | AWS IAM secret key | `wJalrXUtn...EXAMPLEKEY` |
+| `AWS_REGION` | AWS region for services | `ap-south-1` |
+| `AWS_BUCKET_NAME` | S3 bucket for file uploads | `my-travel-bucket` |
+| `SES_EMAIL_SENDER` | Verified SES sender email | `no-reply@yourdomain.com` |
+| `MAP_PROVIDER` | Map service provider | `mapbox` |
+| `MAPBOX_API_KEY` | Mapbox API token | `pk.eyJ1...` |
+| `LOG_LEVEL` | Logging verbosity | `debug`, `info`, `warn`, `error` |
+
+#### 🌐 Client-Safe Variables (NEXT_PUBLIC_*)
+
+These variables are **exposed to the browser** and inlined at build time. Only use for non-sensitive configuration!
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `NEXT_PUBLIC_API_URL` | Base URL for API requests | `http://localhost:3000/api` |
+| `NEXT_PUBLIC_ENV` | Environment identifier | `development`, `production` |
+
+### How Variables Are Accessed
+
+```typescript
+// ✅ Server-only (API routes, server components)
+const dbUrl = process.env.DATABASE_URL;
+const jwtSecret = process.env.JWT_SECRET;
+
+// ✅ Client-safe (can be used anywhere)
+const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+const env = process.env.NEXT_PUBLIC_ENV;
+
+// ❌ NEVER do this (exposes secrets to client)
+// const secret = process.env.JWT_SECRET; // in client component
+```
+
+### Security Measures
+
+#### 1. Git Exclusion (.gitignore)
+
+```gitignore
+# environment files
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*
+!.env.example
+```
+
+#### 2. NEXT_PUBLIC_ Prefix Requirement
+
+Next.js **only** exposes variables prefixed with `NEXT_PUBLIC_` to the browser:
+
+```typescript
+// lib/config.ts - Client configuration
+export const config = {
+  apiUrl: process.env.NEXT_PUBLIC_API_URL!,  // ✅ Exposed to browser
+  env: process.env.NEXT_PUBLIC_ENV!,          // ✅ Exposed to browser
+};
+
+// lib/auth.ts - Server secrets
+const JWT_SECRET = process.env.JWT_SECRET;    // ✅ Server-only
+```
+
+#### 3. Runtime Validation
+
+```typescript
+// Validate required env vars at startup
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is required');
+}
+
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.includes('change-in-production')) {
+  console.warn('⚠️  Using default JWT_SECRET - change in production!');
+}
+```
+
+#### 4. Fallback Values (Development Only)
+
+```typescript
+// Safe fallbacks for local development
+const JWT_SECRET = process.env.JWT_SECRET || 
+  (process.env.NODE_ENV === 'development' 
+    ? 'dev-secret' 
+    : (() => { throw new Error('JWT_SECRET required'); })());
+```
+
+### Setup Instructions
+
+1. **Copy the example file:**
+   ```bash
+   cp .env.example .env.local
+   ```
+
+2. **Replace placeholder values** with real credentials
+
+3. **Verify .gitignore** includes `.env.local`:
+   ```bash
+   cat .gitignore | grep env
+   ```
+
+4. **Test configuration:**
+   ```bash
+   npm run dev
+   # Visit http://localhost:3000/api/health to verify
+   ```
+
+### Production Deployment
+
+| Platform | Configuration Method |
+|----------|---------------------|
+| **Vercel** | Project Settings → Environment Variables |
+| **Docker** | docker-compose.yml environment section |
+| **AWS ECS** | Task Definition environment variables |
+| **Kubernetes** | ConfigMaps and Secrets |
+
+### Reflection on Security Best Practices
+
+#### Why This Approach Works
+
+1. **Defense in Depth**: Multiple layers prevent accidental exposure:
+   - `.gitignore` blocks file commits
+   - `NEXT_PUBLIC_` prefix controls browser exposure
+   - Type-safe configuration with runtime validation
+
+2. **Separation of Concerns**: 
+   - `.env.example` documents required variables (safe to commit)
+   - `.env.local` stores real values (never committed)
+   - Clear distinction between server-only and client-safe variables
+
+3. **Developer Experience**: 
+   - New developers can quickly set up by copying `.env.example`
+   - Comments explain each variable's purpose and format
+   - Validation catches missing variables early
+
+#### Common Security Pitfalls Avoided
+
+| Pitfall | Prevention |
+|---------|------------|
+| Committing secrets to git | `.gitignore` exclusions |
+| Exposing server secrets to browser | No `NEXT_PUBLIC_` prefix on sensitive vars |
+| Hardcoding credentials | Environment variables with placeholders |
+| Unclear variable requirements | Documented `.env.example` with comments |
+| Production with dev secrets | Runtime warnings for default values |
+
+#### Recommendations for Production
+
+1. **Use a secrets manager** (AWS Secrets Manager, HashiCorp Vault)
+2. **Rotate credentials regularly** especially after team changes
+3. **Enable audit logging** for secret access
+4. **Use least-privilege IAM roles** for AWS services
+5. **Set up alerts** for unauthorized access attempts
+
+---
+
+## �🛤️ Routing Architecture
 
 This application implements a comprehensive routing system using the Next.js App Router, featuring public routes, protected routes, and dynamic segments.
 
