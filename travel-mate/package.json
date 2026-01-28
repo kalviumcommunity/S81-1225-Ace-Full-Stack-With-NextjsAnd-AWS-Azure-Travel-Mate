@@ -24,6 +24,7 @@
     "@aws-sdk/client-s3": "^3.972.0",
     "@aws-sdk/client-ses": "^3.972.0",
     "@aws-sdk/s3-request-presigner": "^3.972.0",
+    "@hookform/resolvers": "^5.2.2",
     "@prisma/client": "^6.19.1",
     "bcrypt": "^6.0.0",
     "ioredis": "^5.9.2",
@@ -33,6 +34,7 @@
     "next": "16.0.10",
     "react": "19.2.1",
     "react-dom": "19.2.1",
+    "react-hook-form": "^7.71.1",
     "swr": "^2.3.8",
     "zod": "^4.3.5"
   },

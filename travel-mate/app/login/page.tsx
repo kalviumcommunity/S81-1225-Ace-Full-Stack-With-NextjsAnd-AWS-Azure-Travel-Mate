@@ -4,15 +4,27 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { loginSchema, LoginFormData } from "@/schemas/signupSchema";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    email: "",
-    password: "",
+  const [serverError, setServerError] = useState("");
+
+  // React Hook Form setup with Zod resolver
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    mode: "onBlur",
+    defaultValues: {
+      email: "",
+      password: "",
+    },
   });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
   // Quick mock login for demonstration
   const handleQuickLogin = () => {
@@ -27,10 +39,8 @@ export default function LoginPage() {
     router.push("/dashboard");
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setLoading(true);
+  const onSubmit = async (formData: LoginFormData) => {
+    setServerError("");
 
     try {
       const response = await fetch("/api/auth/login", {
@@ -55,9 +65,9 @@ export default function LoginPage() {
       // Redirect to dashboard
       router.push("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
+      setServerError(
+        err instanceof Error ? err.message : "Something went wrong"
+      );
     }
   };
 
@@ -112,7 +122,7 @@ export default function LoginPage() {
 
         <div className="auth-divider">or login with credentials</div>
 
-        {error && (
+        {serverError && (
           <div
             style={{
               padding: "0.75rem 1rem",
@@ -124,11 +134,11 @@ export default function LoginPage() {
               marginBottom: "1.5rem",
             }}
           >
-            {error}
+            {serverError}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit(onSubmit)} noValidate>
           <div className="form-group">
             <label htmlFor="email" className="form-label">
               Email Address
@@ -136,15 +146,26 @@ export default function LoginPage() {
             <input
               id="email"
               type="email"
-              className="form-input"
+              className={`form-input ${errors.email ? "form-input-error" : ""}`}
               placeholder="you@example.com"
-              value={formData.email}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setFormData({ ...formData, email: e.target.value })
-              }
-              required
+              {...register("email")}
+              aria-invalid={!!errors.email}
+              aria-describedby={errors.email ? "email-error" : undefined}
               autoComplete="email"
             />
+            {errors.email && (
+              <p
+                id="email-error"
+                role="alert"
+                style={{
+                  color: "var(--error)",
+                  fontSize: "0.75rem",
+                  marginTop: "0.25rem",
+                }}
+              >
+                {errors.email.message}
+              </p>
+            )}
           </div>
 
           <div className="form-group">
@@ -172,24 +193,35 @@ export default function LoginPage() {
             <input
               id="password"
               type="password"
-              className="form-input"
+              className={`form-input ${errors.password ? "form-input-error" : ""}`}
               placeholder="••••••••"
-              value={formData.password}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setFormData({ ...formData, password: e.target.value })
-              }
-              required
+              {...register("password")}
+              aria-invalid={!!errors.password}
+              aria-describedby={errors.password ? "password-error" : undefined}
               autoComplete="current-password"
             />
+            {errors.password && (
+              <p
+                id="password-error"
+                role="alert"
+                style={{
+                  color: "var(--error)",
+                  fontSize: "0.75rem",
+                  marginTop: "0.25rem",
+                }}
+              >
+                {errors.password.message}
+              </p>
+            )}
           </div>
 
           <button
             type="submit"
             className="btn btn-primary btn-lg"
             style={{ width: "100%", marginTop: "0.5rem" }}
-            disabled={loading}
+            disabled={isSubmitting}
           >
-            {loading ? (
+            {isSubmitting ? (
               <>
                 <span
                   className="spinner"
