@@ -23,6 +23,8 @@ export type { CardProps } from "./ui/Card";
 export { default as Input } from "./ui/Input";
 export type { InputProps } from "./ui/Input";
 
+export { default as ThemeToggle, ThemeToggleSwitch } from "./ui/ThemeToggle";
+
 // Existing Components
 export { default as Navbar } from "./Navbar";
 export { default as Footer } from "./Footer";
