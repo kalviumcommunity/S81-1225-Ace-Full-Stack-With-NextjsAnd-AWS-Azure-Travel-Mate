@@ -3,35 +3,74 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+
+/**
+ * Signup Form Validation Schema with Zod
+ *
+ * Defines validation rules:
+ * - Name: minimum 3 characters
+ * - Email: valid email format
+ * - Password: minimum 8 characters with complexity requirements
+ * - Confirm Password: must match password
+ */
+const signupSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1, "Name is required")
+      .min(3, "Name must be at least 3 characters long")
+      .max(50, "Name must be at most 50 characters"),
+    email: z
+      .string()
+      .min(1, "Email is required")
+      .email("Please enter a valid email address"),
+    password: z
+      .string()
+      .min(1, "Password is required")
+      .min(8, "Password must be at least 8 characters long")
+      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+      .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+      .regex(/[0-9]/, "Password must contain at least one number"),
+    confirmPassword: z.string().min(1, "Please confirm your password"),
+    agreeToTerms: z.literal(true, {
+      errorMap: () => ({
+        message: "You must agree to the terms and conditions",
+      }),
+    }),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
+
+type SignupFormData = z.infer<typeof signupSchema>;
 
 export default function SignupPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
+  const [serverError, setServerError] = useState("");
+
+  // React Hook Form setup with Zod resolver
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<SignupFormData>({
+    resolver: zodResolver(signupSchema),
+    mode: "onBlur", // Validate on blur for better UX
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      confirmPassword: "",
+      agreeToTerms: false as unknown as true,
+    },
   });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    // Validate passwords match
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-
-    // Validate password strength
-    if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters");
-      return;
-    }
-
-    setLoading(true);
+  const onSubmit = async (formData: SignupFormData) => {
+    setServerError("");
 
     try {
       const response = await fetch("/api/auth/signup", {
@@ -64,9 +103,9 @@ export default function SignupPage() {
       // Redirect to login with success message
       router.push("/login?registered=true");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
-    } finally {
-      setLoading(false);
+      setServerError(
+        err instanceof Error ? err.message : "Something went wrong"
+      );
     }
   };
 
@@ -81,7 +120,7 @@ export default function SignupPage() {
           <p className="auth-subtitle">Join Travel Mate and start exploring</p>
         </div>
 
-        {error && (
+        {serverError && (
           <div
             style={{
               padding: "0.75rem 1rem",
@@ -93,11 +132,11 @@ export default function SignupPage() {
               marginBottom: "1.5rem",
             }}
           >
-            {error}
+            {serverError}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit(onSubmit)} noValidate>
           <div className="form-group">
             <label htmlFor="name" className="form-label">
               Full Name
@@ -105,15 +144,26 @@ export default function SignupPage() {
             <input
               id="name"
               type="text"
-              className="form-input"
+              className={`form-input ${errors.name ? "form-input-error" : ""}`}
               placeholder="John Traveler"
-              value={formData.name}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setFormData({ ...formData, name: e.target.value })
-              }
-              required
+              {...register("name")}
+              aria-invalid={!!errors.name}
+              aria-describedby={errors.name ? "name-error" : undefined}
               autoComplete="name"
             />
+            {errors.name && (
+              <p
+                id="name-error"
+                role="alert"
+                style={{
+                  color: "var(--error)",
+                  fontSize: "0.75rem",
+                  marginTop: "0.25rem",
+                }}
+              >
+                {errors.name.message}
+              </p>
+            )}
           </div>
 
           <div className="form-group">
@@ -123,15 +173,26 @@ export default function SignupPage() {
             <input
               id="email"
               type="email"
-              className="form-input"
+              className={`form-input ${errors.email ? "form-input-error" : ""}`}
               placeholder="you@example.com"
-              value={formData.email}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setFormData({ ...formData, email: e.target.value })
-              }
-              required
+              {...register("email")}
+              aria-invalid={!!errors.email}
+              aria-describedby={errors.email ? "email-error" : undefined}
               autoComplete="email"
             />
+            {errors.email && (
+              <p
+                id="email-error"
+                role="alert"
+                style={{
+                  color: "var(--error)",
+                  fontSize: "0.75rem",
+                  marginTop: "0.25rem",
+                }}
+              >
+                {errors.email.message}
+              </p>
+            )}
           </div>
 
           <div className="form-group">
@@ -141,26 +202,40 @@ export default function SignupPage() {
             <input
               id="password"
               type="password"
-              className="form-input"
+              className={`form-input ${errors.password ? "form-input-error" : ""}`}
               placeholder="••••••••"
-              value={formData.password}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setFormData({ ...formData, password: e.target.value })
+              {...register("password")}
+              aria-invalid={!!errors.password}
+              aria-describedby={
+                errors.password ? "password-error" : "password-hint"
               }
-              required
               autoComplete="new-password"
-              minLength={8}
             />
-            <p
-              style={{
-                fontSize: "0.75rem",
-                color: "var(--muted)",
-                marginTop: "0.5rem",
-              }}
-            >
-              Must be at least 8 characters with uppercase, lowercase, and
-              number
-            </p>
+            {errors.password ? (
+              <p
+                id="password-error"
+                role="alert"
+                style={{
+                  color: "var(--error)",
+                  fontSize: "0.75rem",
+                  marginTop: "0.25rem",
+                }}
+              >
+                {errors.password.message}
+              </p>
+            ) : (
+              <p
+                id="password-hint"
+                style={{
+                  fontSize: "0.75rem",
+                  color: "var(--muted)",
+                  marginTop: "0.5rem",
+                }}
+              >
+                Must be at least 8 characters with uppercase, lowercase, and
+                number
+              </p>
+            )}
           </div>
 
           <div className="form-group">
@@ -170,15 +245,28 @@ export default function SignupPage() {
             <input
               id="confirmPassword"
               type="password"
-              className="form-input"
+              className={`form-input ${errors.confirmPassword ? "form-input-error" : ""}`}
               placeholder="••••••••"
-              value={formData.confirmPassword}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                setFormData({ ...formData, confirmPassword: e.target.value })
+              {...register("confirmPassword")}
+              aria-invalid={!!errors.confirmPassword}
+              aria-describedby={
+                errors.confirmPassword ? "confirmPassword-error" : undefined
               }
-              required
               autoComplete="new-password"
             />
+            {errors.confirmPassword && (
+              <p
+                id="confirmPassword-error"
+                role="alert"
+                style={{
+                  color: "var(--error)",
+                  fontSize: "0.75rem",
+                  marginTop: "0.25rem",
+                }}
+              >
+                {errors.confirmPassword.message}
+              </p>
+            )}
           </div>
 
           <div className="form-group" style={{ marginBottom: "1.5rem" }}>
@@ -192,7 +280,11 @@ export default function SignupPage() {
             >
               <input
                 type="checkbox"
-                required
+                {...register("agreeToTerms")}
+                aria-invalid={!!errors.agreeToTerms}
+                aria-describedby={
+                  errors.agreeToTerms ? "agreeToTerms-error" : undefined
+                }
                 style={{ marginTop: "0.25rem" }}
               />
               <span style={{ fontSize: "0.875rem", color: "var(--muted)" }}>
@@ -206,15 +298,28 @@ export default function SignupPage() {
                 </Link>
               </span>
             </label>
+            {errors.agreeToTerms && (
+              <p
+                id="agreeToTerms-error"
+                role="alert"
+                style={{
+                  color: "var(--error)",
+                  fontSize: "0.75rem",
+                  marginTop: "0.25rem",
+                }}
+              >
+                {errors.agreeToTerms.message}
+              </p>
+            )}
           </div>
 
           <button
             type="submit"
             className="btn btn-primary btn-lg"
             style={{ width: "100%" }}
-            disabled={loading}
+            disabled={isSubmitting}
           >
-            {loading ? (
+            {isSubmitting ? (
               <>
                 <span
                   className="spinner"
